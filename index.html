@@ -11,57 +11,59 @@
 <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&family=Source+Serif+4:wght@400;600&display=swap" rel="stylesheet" />
 <style>
   :root, :root[data-theme="dark"] {
-    --brand: #e5ff44;
-    --accent: #378ef0;
-    --accent-strong: #1473e6;
-    --accent-soft: rgba(55, 142, 240, 0.16);
+    --brand: #ffebaa;
+    --accent: #e3864a;
+    --accent-strong: #b45a24;
+    --accent-soft: rgba(196, 101, 45, 0.22);
     --accent-ink: #ffffff;
     --mask-tint: #ff5cad;
     --handle-fill: #ffffff;
-    --bg: #1b1b1b;
-    --surface: #262626;
-    --surface-2: #2f2f2f;
-    --surface-3: #383838;
-    --line: #141414;
-    --line-soft: #3d3d3d;
-    --ink: #e4e4e4;
-    --ink-strong: #ffffff;
-    --muted: #9a9a9a;
-    --faint: #6b6b6b;
-    --danger: #ff6b6b;
-    --danger-soft: rgba(255, 107, 107, 0.14);
-    --ok: #4cd37e;
-    --stage-bg: #121212;
-    --artboard-shadow: rgba(0, 0, 0, 0.6);
-    --shadow: 0 1px 0 rgba(0, 0, 0, 0.6), 0 10px 30px rgba(0, 0, 0, 0.55);
+    --bg: #1d272a;
+    --surface: #243034;
+    --surface-2: #2b383c;
+    --surface-3: #334246;
+    --line: #131b1d;
+    --line-soft: #3b4b4f;
+    --ink: #f0f0eb;
+    --ink-strong: #f9faf5;
+    --muted: #b4b4b4;
+    --faint: #9a9a9a;
+    --danger: #ff8a7a;
+    --danger-soft: rgba(255, 138, 122, 0.14);
+    --ok: #7fd497;
+    --stage-bg: #161e20;
+    --artboard-shadow: rgba(4, 10, 12, 0.65);
+    --shadow: 0 1px 0 rgba(4, 10, 12, 0.5), 0 10px 30px rgba(4, 10, 12, 0.55);
+    --scrim: rgba(10, 16, 18, 0.6);
     --radius: 6px;
     color-scheme: dark;
   }
 
   :root[data-theme="light"] {
-    --brand: #5f7300;
-    --accent: #1473e6;
-    --accent-strong: #0d66d0;
-    --accent-soft: rgba(20, 115, 230, 0.12);
+    --brand: #a85a2e;
+    --accent: #9d5028;
+    --accent-strong: #a85a2e;
+    --accent-soft: rgba(168, 90, 46, 0.12);
     --accent-ink: #ffffff;
     --mask-tint: #e6198a;
     --handle-fill: #ffffff;
-    --bg: #e9e9e9;
-    --surface: #f5f5f5;
-    --surface-2: #ececec;
-    --surface-3: #e0e0e0;
-    --line: #c8c8c8;
-    --line-soft: #d9d9d9;
-    --ink: #2c2c2c;
-    --ink-strong: #000000;
-    --muted: #6e6e6e;
-    --faint: #9e9e9e;
-    --danger: #d7373f;
-    --danger-soft: rgba(215, 55, 63, 0.12);
-    --ok: #268e6c;
-    --stage-bg: #cfcfcf;
-    --artboard-shadow: rgba(0, 0, 0, 0.25);
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 10px 30px rgba(0, 0, 0, 0.16);
+    --bg: #f0ede4;
+    --surface: #fbfaf6;
+    --surface-2: #f2efe7;
+    --surface-3: #e8e4d9;
+    --line: rgba(74, 58, 42, 0.2);
+    --line-soft: rgba(74, 58, 42, 0.14);
+    --ink: #2b2d28;
+    --ink-strong: #1c1d19;
+    --muted: #6b675d;
+    --faint: #75705f;
+    --danger: #b42318;
+    --danger-soft: rgba(180, 35, 24, 0.08);
+    --ok: #3e6b3f;
+    --stage-bg: #efece3;
+    --artboard-shadow: rgba(62, 36, 24, 0.22);
+    --shadow: 0 1px 2px rgba(62, 36, 24, 0.07), 0 4px 16px rgba(62, 36, 24, 0.1), 0 1px 3px rgba(62, 36, 24, 0.06);
+    --scrim: rgba(43, 32, 22, 0.3);
     color-scheme: light;
   }
 
@@ -677,7 +679,7 @@
   .menu-chips .chip { padding: 2px 8px; font-size: 11.5px; border-radius: 12px; border: 1px solid var(--line-soft); }
   .add-menu button:disabled { opacity: 0.4; background: none; color: var(--ink); }
 
-  .modal-veil { position: fixed; inset: 0; z-index: 40; display: none; place-items: center; padding: 24px; background: rgba(0, 0, 0, 0.55); }
+  .modal-veil { position: fixed; inset: 0; z-index: 40; display: none; place-items: center; padding: 24px; background: var(--scrim); }
   .modal-veil.show { display: grid; }
   .modal {
     width: min(1040px, 100%); max-height: 100%; display: flex; flex-direction: column; overflow: hidden;
@@ -1457,7 +1459,7 @@
 
   function applyThemeToCanvas() {
     readChromeColors();
-    const accent = themeColor("--accent", "#378ef0");
+    const accent = themeColor("--accent", "#e3864a");
     const handleFill = themeColor("--handle-fill", "#ffffff");
     if (transformer) transformer.setAttrs({ borderStroke: accent, anchorStroke: accent, anchorFill: handleFill });
     if (cropRect) cropRect.stroke(accent);
@@ -2690,7 +2692,7 @@
     const out = document.createElement("canvas");
     out.width = Math.max(1, Math.round(W * pr)); out.height = Math.max(1, Math.round(H * pr));
     const ctx = out.getContext("2d");
-    ctx.fillStyle = themeColor("--stage-bg", "#cfcfcf"); ctx.fillRect(0, 0, out.width, out.height);
+    ctx.fillStyle = themeColor("--stage-bg", "#161e20"); ctx.fillRect(0, 0, out.width, out.height);
     stage.getLayers().forEach((kl) => {
       if (!kl.visible()) return;
       const canvas = kl.toCanvas({ x: 0, y: 0, width: W, height: H, pixelRatio: pr });
@@ -3141,12 +3143,12 @@
 
   const chromeColors = {};
   function readChromeColors() {
-    chromeColors.surface = themeColor("--surface", "#262626");
-    chromeColors.page = themeColor("--surface-3", "#383838");
-    chromeColors.tick = themeColor("--faint", "#6b6b6b");
-    chromeColors.text = themeColor("--muted", "#9a9a9a");
-    chromeColors.ink = themeColor("--ink", "#e4e4e4");
-    chromeColors.accent = themeColor("--accent", "#378ef0");
+    chromeColors.surface = themeColor("--surface", "#243034");
+    chromeColors.page = themeColor("--surface-3", "#334246");
+    chromeColors.tick = themeColor("--faint", "#9a9a9a");
+    chromeColors.text = themeColor("--muted", "#b4b4b4");
+    chromeColors.ink = themeColor("--ink", "#f0f0eb");
+    chromeColors.accent = themeColor("--accent", "#e3864a");
   }
 
   let chromeFrame = 0, chromeFull = false;
@@ -3243,12 +3245,12 @@
         if (s * z >= 14) { g.fillStyle = PRINT_COLORS.safe; g.font = font(9.5, 700); g.textBaseline = "top"; g.fillText("SAFE AREA", t.x + s + 5 * hair, t.y + s + 4 * hair); }
       }
       const gap = Math.max(mmToPx(2), 4 * hair), len = Math.max(mmToPx(5), 14 * hair);
-      g.strokeStyle = chromeColors.ink || "#e4e4e4"; g.lineWidth = hair;
+      g.strokeStyle = chromeColors.ink || "#f0f0eb"; g.lineWidth = hair;
       g.beginPath();
       [t.x, t.x + t.width].forEach((x) => { g.moveTo(x, -gap); g.lineTo(x, -gap - len); g.moveTo(x, H + gap); g.lineTo(x, H + gap + len); });
       [t.y, t.y + t.height].forEach((y) => { g.moveTo(-gap, y); g.lineTo(-gap - len, y); g.moveTo(W + gap, y); g.lineTo(W + gap + len, y); });
       g.stroke();
-      g.font = font(11.5); g.textBaseline = "bottom"; g.fillStyle = chromeColors.text || "#9a9a9a";
+      g.font = font(11.5); g.textBaseline = "bottom"; g.fillStyle = chromeColors.text || "#b4b4b4";
       g.fillText(docSummaryParts().join("  ·  "), t.x + 6 * hair, -gap - len - 4 * hair);
       g.textBaseline = "top"; g.font = font(10.5);
       let x = t.x + 6 * hair;
@@ -3324,7 +3326,7 @@
         if (horizontal) { ctx.moveTo(cpos + 0.5, 0); ctx.lineTo(cpos + 0.5, RULER); } else { ctx.moveTo(0, cpos + 0.5); ctx.lineTo(RULER, cpos + 0.5); }
         ctx.stroke();
       }
-      ctx.strokeStyle = themeColor("--line", "#141414"); ctx.beginPath();
+      ctx.strokeStyle = themeColor("--line", "#131b1d"); ctx.beginPath();
       if (horizontal) { ctx.moveTo(0, RULER - 0.5); ctx.lineTo(cw, RULER - 0.5); } else { ctx.moveTo(RULER - 0.5, 0); ctx.lineTo(RULER - 0.5, ch); }
       ctx.stroke();
     };
@@ -4194,7 +4196,7 @@
     const layer = maskOwner;
     if (!layer || !layer.node || !state.smart.points.length || state.tool !== "brush") { uiLayer.batchDraw(); return; }
     const transform = layer.node.getTransform();
-    const positive = themeColor("--ok", "#4cd37e"), negative = themeColor("--danger", "#ff6b6b");
+    const positive = themeColor("--ok", "#7fd497"), negative = themeColor("--danger", "#ff8a7a");
     smartGroup = new Konva.Group({ listening: false });
     state.smart.points.forEach(([x, y], i) => {
       const p = transform.point({ x, y });
@@ -4515,7 +4517,7 @@
     if (b > 0) { ctx.strokeStyle = PRINT_COLORS.bleed; ctx.setLineDash([4, 3]); ctx.lineWidth = 1; ctx.strokeRect(x0 + 0.5, y0 + 0.5, W * k - 1, H * k - 1); }
     ctx.setLineDash([]); ctx.strokeStyle = PRINT_COLORS.trim; ctx.lineWidth = 1.5; ctx.strokeRect(tx, ty, tw, th);
     if (s > 0 && s * k > 2) { ctx.strokeStyle = PRINT_COLORS.safe; ctx.setLineDash([4, 3]); ctx.lineWidth = 1; ctx.strokeRect(tx + s * k, ty + s * k, tw - 2 * s * k, th - 2 * s * k); ctx.setLineDash([]); }
-    ctx.strokeStyle = themeColor("--ink", "#e4e4e4"); ctx.lineWidth = 1;
+    ctx.strokeStyle = themeColor("--ink", "#f0f0eb"); ctx.lineWidth = 1;
     const gap = 3, len = 8;
     ctx.beginPath();
     [tx, tx + tw].forEach((x) => { ctx.moveTo(x, y0 - gap); ctx.lineTo(x, y0 - gap - len); ctx.moveTo(x, y0 + H * k + gap); ctx.lineTo(x, y0 + H * k + gap + len); });
@@ -5180,7 +5182,7 @@
     if (!layer || !layer.naturalWidth) return;
     const n = layer.node;
     const box = ratioBox(layer, cropRatioValue());
-    const accent = themeColor("--accent", "#378ef0");
+    const accent = themeColor("--accent", "#e3864a");
     cropGroup = new Konva.Group({ x: n.x(), y: n.y(), offsetX: n.offsetX(), offsetY: n.offsetY(), rotation: n.rotation(), scaleX: n.scaleX(), scaleY: n.scaleY() });
     uiLayer.add(cropGroup);
     cropGroup.add(new Konva.Rect({ x: 0, y: 0, width: layer.naturalWidth, height: layer.naturalHeight, fill: "rgba(0,0,0,0.6)", listening: false }));
