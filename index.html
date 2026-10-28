@@ -4209,8 +4209,8 @@
       const dataUrl = await readFile(file);
       const baseName = (file.name || "photo").replace(/\.[^.]+$/, "");
       const result = await py({ action: "new_session", image_data: dataUrl, name: baseName });
-      const img = await loadImageElement(dataUrl);
       const src = rawWithBust(result.path);
+      const img = await loadImageElement(dataUrl).catch(() => loadImageElement(src));
       imageCache.set(src, img);
       const first = !doc.ready || !!open;
       const mode = open ? open.mode : "own";

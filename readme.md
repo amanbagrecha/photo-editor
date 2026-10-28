@@ -155,7 +155,7 @@ bgremove.py         macOS Vision subject lifting (and the Smart select fallback)
 docstore.py         documents on disk: autosave, step history, current.json
 render.py           Pillow renderer for a document (agent previews, saves, thumbnails)
 agent/              MCP tools for Claude (mcp.toml + tools.py), own pyproject.toml
-vendor/             the patched mlx-sam wheel, see Requirements
+mlx_sam/            the mlx-sam source used by Smart select, see Requirements
 ```
 
 Two things drive that split:
@@ -215,14 +215,14 @@ Each optional feature is its own project under `addons/`, so it installs on
 its own, from its own `pyproject.toml` and `uv.lock`, and only when you press
 **Install** in its panel. The page then runs that project's `addon.py`, which
 makes fused-render build the project's environment the same way it builds any
-app's (with its usual confirmation for the vendored wheel), and the add-on
+app's, and the add-on
 records which interpreter it got in `.fused/data/addons/`. The warm worker runs
 `engine.py` in that interpreter, so the models stay resident between calls
 while the base app never imports MLX.
 
 | Add-on | Installs | Needs |
 |---|---|---|
-| `addons/smart-select` | `mlx-sam` (vendored wheel), MLX, huggingface-hub | Apple Silicon, macOS 14 |
+| `addons/smart-select` | MLX, OpenCV, safetensors, huggingface-hub | Apple Silicon, macOS 14 |
 | `addons/upscale` | `mlx-gen` (mflux, SeedVR2), MLX, PyTorch, huggingface-hub | Apple Silicon, macOS 14 |
 | `addons/background-removal` | PyObjC Vision, Quartz and Cocoa | macOS 14 (Intel or Apple Silicon) |
 
@@ -260,18 +260,18 @@ on an M5. Opening a photo starts loading SAM in the background (about 30 s the
 first time) if the Smart select add-on is installed and its weights are already
 on disk.
 
-### About `vendor/mlx_sam-0.3.0-py3-none-any.whl`
+### About `mlx_sam/`
 
-Every `mlx-sam` release on PyPI (0.1.0 to 0.3.0) declares
-`Requires-Python >=3.14`, but FusedRender ships Python 3.12 and the package is
-pure Python that compiles and runs there unchanged. The vendored wheel is the
-upstream 0.3.0 wheel with only that one metadata line relaxed to `>=3.12`;
-`[tool.uv.sources]` in `addons/smart-select/pyproject.toml` points uv at it,
-behind the same Apple Silicon and macOS 14 marker as the dependency. Because it
-is not a plain PyPI release, fused-render asks once before installing the Smart
-select add-on. Only the image segmenter (`load_image_segmenter`,
-`encode_image`, `predict_from_encoded`) is used; none of the video code paths
-are touched.
+`mlx_sam/` is the image-segmentation part of upstream `mlx-sam` 0.3.0 as plain
+Python source (config, preprocessing, weight loading, the SAM 2.1 models and
+the video predictor module that holds the mask helpers). It is included as
+source because every `mlx-sam` release on PyPI declares `Requires-Python
+>=3.14`, while FusedRender ships Python 3.12 and the code runs there
+unchanged. The Smart select add-on process runs from the app folder, so it
+imports this package directly, and its `pyproject.toml` lists the runtime
+dependencies (MLX, OpenCV, safetensors, huggingface-hub) from PyPI. Only the
+image segmenter (`load_image_segmenter`, `encode_image`,
+`predict_from_encoded`) is used; none of the video code paths are touched.
 
 ## Known gaps
 

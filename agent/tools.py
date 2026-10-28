@@ -17,7 +17,7 @@ act on the page the editor shows; go_to_page switches it, and add_page,
 duplicate_page, delete_page, move_page and rename_page manage them.
 
 This folder has its own `pyproject.toml` on purpose: the editor's own
-dependencies include a vendored wheel that `fused app serve` cannot install,
+dependencies include add-ons that `fused app serve` does not install,
 and none of these tools needs a model.
 """
 
