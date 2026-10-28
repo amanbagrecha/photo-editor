@@ -1,0 +1,18 @@
+[project]
+name = "photo-editor-agent"
+version = "0.1.0"
+requires-python = ">=3.12"
+# Only what the agent tools import: Pillow/numpy for pixels, and Vision (plus
+# Quartz/Cocoa to read its mask) for remove_background. The editor itself
+# declares no packages and keeps Vision in its optional addons/ projects, so
+# the MCP tools need this folder's own environment.
+dependencies = [
+    "numpy>=1.26",
+    "pillow>=11",
+    "pyobjc-framework-Cocoa>=10",
+    "pyobjc-framework-Quartz>=10",
+    "pyobjc-framework-Vision>=10",
+]
+
+[tool.uv]
+package = false

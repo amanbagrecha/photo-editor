@@ -1,0 +1,20 @@
+[project]
+name = "photo-editor-background-removal"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=1.26",
+    "pillow>=11",
+    "pyobjc-framework-Cocoa>=10; sys_platform == 'darwin'",
+    "pyobjc-framework-Quartz>=10; sys_platform == 'darwin'",
+    "pyobjc-framework-Vision>=10; sys_platform == 'darwin'",
+]
+
+[tool.uv]
+package = false
+no-build = true
+required-version = ">=0.12.17"
+required-environments = [
+    "sys_platform == 'darwin' and platform_machine == 'arm64' and platform_release == '23.0.0'",
+    "sys_platform == 'darwin' and platform_machine == 'x86_64' and platform_release == '23.0.0'",
+]

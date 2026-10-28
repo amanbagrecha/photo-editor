@@ -1,0 +1,13 @@
+version = 1
+revision = 5
+requires-python = ">=3.12"
+required-markers = [
+    "platform_machine == 'arm64' and platform_release == '23' and sys_platform == 'darwin'",
+    "platform_machine == 'arm64' and platform_release == '20' and sys_platform == 'darwin'",
+    "platform_machine == 'x86_64' and platform_release == '20' and sys_platform == 'darwin'",
+]
+
+[[package]]
+name = "photo-editor"
+version = "0.1.0"
+source = { virtual = "." }

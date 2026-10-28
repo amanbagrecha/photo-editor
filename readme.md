@@ -1,0 +1,286 @@
+# Photo Editor
+
+A local, Canva-inspired photo editor. Every pixel stays on this Mac:
+generative Remove / Insert runs FLUX.2 Klein through fused-render's own
+`fused.ai.image`, click-to-select runs SAM 2.1 on MLX, upscaling runs SeedVR2 3B
+on MLX, and background removal uses macOS's own Vision framework. Nothing is
+uploaded. Smart select, Upscale and Vision background removal are optional
+add-ons: nothing for them is installed until you press **Install** in their
+panel, and model weights are only downloaded when you press **Download** in the
+panel that needs them.
+
+![Photo Editor with a sticker layer selected on a custom 1536 x 1024 page](preview.png)
+
+> **Runs on any Mac fused-render runs on.** Layers, pages, crop, adjust,
+> filters and export need nothing beyond fused-render itself. Smart select and
+> Upscale need Apple Silicon and macOS 14; Vision background removal needs
+> macOS 14; generative Remove / Insert needs fused-render's on-device AI (Apple
+> Silicon). On a Mac that can't run one of them, its panel says why instead of
+> offering it (see [Requirements](#requirements)). The page also loads Konva and
+> its fonts from public CDNs (unpkg, Google Fonts).
+
+## What it does
+
+| Tool | How it works |
+|---|---|
+| **Upload** | Drop a photo anywhere on the canvas. EXIF rotation is baked in on import so masks always line up. |
+| **Adjust** | Ten sliders (brightness, contrast, saturation, temperature, tint, highlights, shadows, sharpness, vignette, blur). Live CSS preview, then baked into pixels with Pillow. |
+| **Filters** | Seven presets with an intensity slider. |
+| **Crop** | Freeform plus the usual ratios. |
+| **Remove / Insert** | Paint a mask (smart select / brush / lasso / box / eraser) with brush-size, feather and expand/contract controls, optionally describe the change, press Remove or Generate. Runs a local image-edit model through `fused.ai.image` (FLUX.2 Klein 4B by default; the picker lists every edit-capable model fused-render knows). |
+| **Smart select** | Fifth mode of the mask tool (`S`). Click a subject and SAM 2.1 (hiera base-plus, MLX) returns its mask; Shift-click adds a positive point, Option-click a negative one, and Brush / Erase refine the result. Image features are cached per source file so repeat clicks take tens of milliseconds. Optional add-on (Install in the Smart select tip). Falls back to Vision's `instanceAtPoint` (single click) while it is not installed or its weights are not downloaded, if the Background removal add-on is installed. Hidden on Macs that can run neither. |
+| **Upscale & restore** | Optional add-on (Install in the Upscale panel). 2x, 3x or "short edge 2160" with a 0-50 % denoise slider. SeedVR2 3B on MLX in the warm worker, started and then polled. The layer keeps its on-canvas size; only the pixel count grows. Refuses outputs over 8192 px on the long edge or 48 megapixels. |
+| **Background Remover** | One click once the Background removal add-on is installed: `VNGenerateForegroundInstanceMaskRequest` on the Neural Engine — class-agnostic, sub-second, no model download. Without it, Remove BG opens a panel offering the install and a plain-background cut that works on logos, icons and screenshots. |
+| **Page sizes** | New document dialog with Paper (A3-A6, B4/B5, Letter, Legal, Tabloid), Photo prints, Cards & flyers, Posters, Screen & social and Custom sizes, plus resolution (DPI), bleed and safe margin. Opened photos keep their pixels and show the size they print at. Page setup in Properties changes any of it later. |
+| **Pages** | A document can hold several pages, each with its own size, print setup, guides and layers: one certificate per course, the front and back of a card. The **Pages** list at the top of the Layers tab adds a blank page (same setup as the one in view), duplicates, deletes, renames (double-click) and reorders (drag) them; click a row, use the pager on the canvas, or press Page Up / Page Down to change pages. Undo follows the step back to the page it changed. ⌘C / ⌘X and ⌘V copy layers between pages at exactly the same place and size, and **Copy to page** on the float bar sends the selection to another page, every other page or a new one. |
+| **Rulers, grid & guides** | View menu: rulers in mm / cm / in / px, a measurement grid, bleed / trim / safe-area overlay with crop marks, guides dragged out of the rulers, and snapping to page edges, margins and guides. |
+| **Export** | Print: original size or any paper size (fit / fill), 150-600 DPI, bleed, crop marks with a page-info slug, optionally centred on an A4 / Letter / A3 sheet, as PDF, PNG, JPEG or TIFF with DPI written into the file. Digital: original, 2x, 1/2x, custom width or a screen preset as PNG, JPEG or WebP. Warns about photos under 150 ppi and missing bleed. With several pages, export all of them or only the one in view: a PDF holds every page (each at its own size), other formats write one file per page ("name – page 2.png"); the preview pages through them. Files go to the save folder (below), not ~/Downloads. |
+| **Autosave & documents** | Every step is saved as you go, so starting a new document never loses the last one, and a reload reopens the document you had open. A step made just before a reload, including a new document's first step, is kept in the tab until the disk has it, then saved. The start screen lists recent documents; the **Files** tab lists all of them. **⌘S** (or the "Saved" label next to the name) writes a full-size PNG copy to the save folder, `~/Pictures/Photo Editor`. |
+| **History** | The **History** tab lists every step, yours and Claude's, with a thumbnail. Click one to go back to it. Going back is recorded as a new step, so the later steps are still there. |
+| **Sign** | The signature button in the tool rail opens the Sign view in the left panel: type a name (prefilled from the selected text layer), pick an ink, and click one of eight signature styles, each previewed live in its Google handwriting font (fetched on first use into `.fused/data/fonts/`). With a line layer selected the signature is sized to about half the line and set on it, baseline just through the stroke; otherwise it is centred. It is an ordinary editable text layer and an ordinary undoable step, placed by the same code as the `add_signature` MCP tool. |
+| **Agent tools (MCP)** | Claude can drive the editor: open photos, add text, shapes, arrows and images, move and restyle layers, adjust, filter, crop, cut out, render to look at the result, and save. An open editor follows along within a second. See [Driving it from Claude](#driving-it-from-claude). |
+
+Undo/redo, zoom, View (rulers, grid, guides) and Export are in the top bar.
+Either side panel folds into a thin strip with the « button in its tab bar;
+click the strip to bring it back. **Tab** hides or shows both panels, and
+View › Reset panel layout restores them.
+
+To align several layers, Shift- or ⌘-click them in the Layers list: an align
+bar replaces the blend controls, with align left / centre / right / top /
+middle / bottom and (for three or more) distribute. The Position menu over a
+layer aligns that one layer to the page.
+
+## Driving it from Claude
+
+`agent/` is an MCP server made with fused-render's app-MCP support: `mcp.toml`
+lists the tools and `tools.py` implements them. Register it once, at user
+scope, so every Claude session sees it, including fused-render's own Claude
+chat:
+
+```sh
+claude mcp add --scope user photo-editor -- ~/.fused-render/fused-bin/fused app serve "$PWD/agent"
+```
+
+Run that from this folder, then start a new chat; a chat that is already open
+does not pick up new servers. fused-render's MCP panel cannot do this
+registration for you: it only serves an app's root folder, and the root's
+dependencies cannot be installed by `serve` (see the end of this section). Then ask something like *"open ~/Desktop/team.jpg in
+the photo editor, put 'Aman' at the top centre on a red label, circle the face
+on the left and save it as a JPEG"*. The tools:
+
+| Tool | What it does |
+|---|---|
+| `list_documents`, `new_document`, `open_image`, `open_document`, `get_document`, `rename_document`, `set_page`, `set_page_size` | Documents. `new_document` takes the same presets as the dialog (`a4`, `letter`, `ig-post`, `story` ...) or a pixel size. `set_page_size` resizes the page in view to a pixel size, a preset or a layer's box (`fit_to_layer`), moving layers and guides with it. `get_document` lists the pages and returns every layer's id, bounds and style on one page. |
+| `go_to_page`, `add_page`, `duplicate_page`, `delete_page`, `move_page`, `rename_page`, `copy_layers` | Pages. `copy_layers` puts layers (or `"all"`) on another page exactly where they are, or moves them with `move=true`. Every other tool acts on the page the editor shows; `go_to_page` switches it (the editor follows), and a new or duplicated page is shown straight away. Pages are named by number (from 1), id or name. |
+| `add_text`, `add_shape`, `add_line`, `add_image` | New layers. `position` (`center`, `top`, `bottom-right` ...) places them inside the safe margin; `x`/`y` place them exactly. `add_text(background_color=...)` makes a label or badge. |
+| `update_layer`, `delete_layer`, `arrange_layer` | Move, resize, recolour, rename, hide, reorder. |
+| `search_fonts`, `install_font`, `list_fonts` | Any Google Fonts family for text, not only the twelve built in. `search_fonts` reads the catalogue (by name and category), `install_font` downloads a family's TTFs into `.fused/data/fonts/<Family>/`; `add_text` and `update_layer` install a Google family on first use. The Pillow render reads those files and the editor loads the same files as `@font-face`, so both draw the real font. |
+| `preview_signatures`, `add_signature` | Signatures as editable text layers in handwriting fonts: `preview_signatures(name)` draws every style (elegant, flowing, airy, bold-scrawl, handwritten, neat, formal, ornate) on one contact sheet; `add_signature(name, style, above_line=<line layer>)` sizes the signature to about half the line and sets it on the line with the baseline just through the stroke. |
+| `adjust_image`, `apply_filter`, `crop_image`, `remove_background` | Pixel edits, done with the same Pillow and Vision code the panels use. |
+| `pan_image_content` | Move or zoom the picture inside an image layer while its box stays put (page pixels, rotation and scale accounted for). What leaves the box is clipped, the uncovered part is transparent. Baked from the layer's untouched source every time, so panning back brings the pixels back; `reset` restores it. |
+| `screenshot_editor` | What the open editor shows, as a PNG Claude can look at: `mode="page"` is the page drawn by the editor itself (real fonts, blend modes), `mode="editor"` is the canvas as it is on screen with grid, guides, rulers and the selection. Falls back to the Python render when no editor is open. |
+| `render_document`, `save_document` | A PNG of a page to look at, and the finished file in the save folder: a PDF holds every page, other formats the page in view unless `pages="all"` (one file per page). |
+| `get_view`, `set_view`, `add_guide`, `clear_guides` | The editor's View settings (grid and its spacing, snap, rulers, guides, bleed/trim overlay) and ruler guides. With Snap on, every placement snaps to the page and trim edges, centre, safe margin and guides, and, when the grid is showing, onto the grid. |
+| `align_layers`, `distribute_layers` | Align left / centre / right / top / middle / bottom, to the page, to the group, or to one layer; spread layers evenly or at a fixed gap. |
+| `list_history`, `restore_version`, `undo` | Step history, shared with the editor's History tab. |
+
+How it works: documents live in `.fused/data/documents/<id>/` as `doc.json`
+(its `snap` is `{localSession, page, pages: [...]}`, one entry per page with
+its size, setup, guides and layers; documents from before pages read as one
+page)
+plus one `history/NNNNNN.json` snapshot and one thumbnail per step
+(`docstore.py`). The page and the tools both save by committing a new
+revision, and `current.json` records which document is open and its latest
+revision. `view.json` carries the View settings and the page in view both
+ways, so the tools snap to the grid you see and edit the page you are looking
+at. `request.json` plus `screens/` is how `screenshot_editor` asks
+the open page for a picture and gets it back. The page reads that file once a second and loads any newer revision.
+When Claude opens or creates a document, the editor switches to it. The page
+switches only for documents Claude opens, so two open tabs never pull each
+other to a different document. If you and Claude change the same document at
+the same moment, Claude's revision wins and the editor reloads it. Your
+step from that moment is dropped, and you can redo it.
+
+The tools render with Pillow (`render.py`), so they work while the editor is
+closed. Positions and shapes match the editor exactly. Text uses the macOS
+system copy of each font (Source Sans 3 falls back to Helvetica Neue unless it
+is installed), so text widths in a render or a tool-saved file can differ
+slightly from the editor. Google families installed by the tools are the
+exception: `fonts.py` keeps their TTFs in `.fused/data/fonts/<Family>/` and
+an `installed.json` index, `render.py` reads the folder, and the page loads
+the same files through `fused.rawUrl` as `@font-face` rules (re-laying out
+every text layer once they arrive), so the two match.
+
+`agent/` has its own `pyproject.toml` (Pillow, numpy, PyObjC Vision) because
+`fused app serve` installs the MCP tools' environment itself, and the editor's
+own `pyproject.toml` declares no packages. The tools need no model, so they skip
+the MLX add-ons entirely.
+
+### How Remove fills the selection
+
+`fused.ai.image` edits take an image and an instruction but no mask, so the
+selection has to be visible in the picture the model gets. Insert paints it
+solid magenta so the model knows where to draw. Remove does not: FLUX.2 Klein
+often hands a magenta patch straight back instead of filling it. Instead:
+
+- The mask is expanded by about one latent cell (16 px at the model's ~1 MP
+  canvas) so the subject's outline cannot survive as a ghost.
+- The selection is pre-filled from the surrounding pixels with a push-pull
+  fill (`imaging.fill_from_surroundings`), and the model is asked to repair
+  that soft patch into real background. A typed hint is appended as "The
+  repaired area shows: ...". Even if the model changes nothing, the result is
+  already blended with its neighbourhood.
+- On the way back, `imaging.match_tone` removes the model's overall colour
+  drift (FLUX returns the frame slightly lighter or warmer), so the patch does
+  not read as a pale copy of the selection. For Insert, any magenta the model
+  left inside the selection is filled from its surroundings first, and the page
+  says so when that covered much of the area.
+
+## How it fits together
+
+```
+index.html          the whole UI (vanilla JS + Konva via CDN, no build step)
+photo_editor.py     runPython entry: uploads, masks, adjustments, crop, export,
+                    background removal, AI-edit prepare/composite -- everything
+                    that finishes in seconds
+worker.py           warm-worker entry (main(**params)): SAM, upscaler, weight
+                    downloads; starts work and reads status
+addon_env.py        which add-ons this Mac supports and has installed; runs
+                    engine.py inside an add-on's environment for the worker
+engine.py           resident SAM + SeedVR2 models and their threads
+addons/<name>/      one project per optional add-on (smart-select, upscale,
+                    background-removal): pyproject.toml, uv.lock, addon.py
+imaging.py          Pillow/numpy: sessions, masks, fills, compositing
+bgremove.py         macOS Vision subject lifting (and the Smart select fallback)
+docstore.py         documents on disk: autosave, step history, current.json
+render.py           Pillow renderer for a document (agent previews, saves, thumbnails)
+agent/              MCP tools for Claude (mcp.toml + tools.py), own pyproject.toml
+vendor/             the patched mlx-sam wheel, see Requirements
+```
+
+Two things drive that split:
+
+- **`runPython` is killed at 60 s** and gets a fresh subprocess every call, so it
+  can never hold a loaded model resident between calls.
+- **The warm worker's HTTP handler times out at 65 s**, so `worker.py` only ever
+  *starts* an upscale or a download and reports progress; `engine.py` runs it on
+  a thread and the page polls. Progress is also POSTed to the shell's download
+  manager from the worker itself, so the row keeps moving after the page is
+  closed.
+
+`engine.py` is deliberately a separate module from `worker.py`: the shipped
+worker re-imports its target whenever the file's mtime changes, which would
+discard the model on every edit of the dispatcher. `import engine` resolves from
+`sys.modules`, so the weights survive.
+
+### Memory: one heavy model at a time
+
+FLUX (loaded by fused-render for `fused.ai.image`) and SeedVR2 (loaded by this
+app's worker) are both multi-gigabyte, and only one of them fits comfortably in
+32 GB alongside the rest of the system. So they never stay resident together:
+Upscale first calls `fused.ai.models.unload({capability: "text-to-image"})`,
+and Remove / Insert first asks the worker to `unload_upscaler` (which drops the
+weights on their own thread, then `gc.collect()` + `mx.clear_cache()`).
+
+MLX binds every array to the thread that created it, so each model lives on one
+thread for its whole life. SAM is small and interactive, so it gets its own
+thread and queue and never waits behind an upscale. The worker answers
+`smart_mask` with `{"ready": false}` while the weights are still loading and the
+page polls `sam_status` instead of blocking the HTTP handler.
+
+### Masks
+
+The page authors masks on an offscreen canvas in **source-pixel space**, so
+zooming or panning can never shift what gets repainted. The alpha channel is the
+mask; the pink tint is cosmetic. On export, alpha becomes luminance and the file
+is written as opaque grayscale — **white = change, black = preserve** — so a
+transparent "keep" area can never read as white and repaint the whole photo.
+
+Expand/contract runs the morphology on a quarter-scale copy, which is far finer
+than the ~1 MP model canvas can resolve and keeps a 12-megapixel photo under a
+quarter second.
+
+`imaging.feathered_composite` scales the model's output back to the upload's
+resolution and blends it in through the mask only. Untouched pixels stay
+bit-identical to the upload, and a small blur hides the seam.
+
+## Requirements
+
+The editor's own `pyproject.toml` declares no packages, so it installs nothing
+and runs on fused-render's bundled interpreter (which provides Pillow and
+numpy) on any Mac fused-render supports, Intel included. Its `uv.lock` is
+checked against macOS 14 and macOS 11 on Apple Silicon and macOS 11 on Intel.
+
+Each optional feature is its own project under `addons/`, so it installs on
+its own, from its own `pyproject.toml` and `uv.lock`, and only when you press
+**Install** in its panel. The page then runs that project's `addon.py`, which
+makes fused-render build the project's environment the same way it builds any
+app's (with its usual confirmation for the vendored wheel), and the add-on
+records which interpreter it got in `.fused/data/addons/`. The warm worker runs
+`engine.py` in that interpreter, so the models stay resident between calls
+while the base app never imports MLX.
+
+| Add-on | Installs | Needs |
+|---|---|---|
+| `addons/smart-select` | `mlx-sam` (vendored wheel), MLX, huggingface-hub | Apple Silicon, macOS 14 |
+| `addons/upscale` | `mlx-gen` (mflux, SeedVR2), MLX, PyTorch, huggingface-hub | Apple Silicon, macOS 14 |
+| `addons/background-removal` | PyObjC Vision, Quartz and Cocoa | macOS 14 (Intel or Apple Silicon) |
+
+The MLX packages publish wheels for macOS 14 and newer on Apple Silicon only,
+so those add-ons mark their MLX dependencies
+`sys_platform == 'darwin' and platform_machine == 'arm64' and platform_release >= '23'`
+and lock against that one baseline. Vision's subject lifting
+(`VNGenerateForegroundInstanceMaskRequest`) is new in macOS 14 on both Intel and
+Apple Silicon, so PyObjC is marked only `sys_platform == 'darwin'` and that
+add-on locks against macOS 14 on both. Every project sets `no-build = true`, so
+nothing is ever compiled on your Mac. On a Mac an add-on doesn't support, its
+panel says why (for example "needs a Mac with Apple Silicon") and never offers
+the install.
+
+Beyond the add-ons:
+
+- An edit-capable local image model in fused-render (FLUX.2 Klein 4B, 4.6 GB, is
+  the recommended one). If it is missing, the Remove / Insert panel says so and
+  offers **Download**; fused-render's AI Models page works too. On a Mac where
+  fused-render's on-device AI is off (Intel), the panel says so instead.
+- Upscaler weights, `AbstractFramework/seedvr2-3b-8bit` (about 4.7 GB):
+  **Download** in the Upscale panel once the add-on is installed. Override the
+  repo with `PHOTO_EDITOR_UPSCALER`; `numz/SeedVR2_comfyUI` (fp16, 7.3 GB) also
+  works.
+- Smart select weights, `avbiswas/sam2.1-hiera-base-plus-mlx` (352 MB,
+  Apache-2.0): **Download** in the Smart select tip once the add-on is
+  installed. Until then Smart select uses macOS Vision if that add-on is
+  installed. Override the repo with `PHOTO_EDITOR_SAM`.
+- Roughly 20-30 GB of memory free while a heavy model loads.
+
+Weights land in the standard Hugging Face cache (`~/.cache/huggingface`), so
+anything already fetched there is picked up without a second download. The
+first edit or upscale of a session loads its model, which takes a few seconds
+on an M5. Opening a photo starts loading SAM in the background (about 30 s the
+first time) if the Smart select add-on is installed and its weights are already
+on disk.
+
+### About `vendor/mlx_sam-0.3.0-py3-none-any.whl`
+
+Every `mlx-sam` release on PyPI (0.1.0 to 0.3.0) declares
+`Requires-Python >=3.14`, but FusedRender ships Python 3.12 and the package is
+pure Python that compiles and runs there unchanged. The vendored wheel is the
+upstream 0.3.0 wheel with only that one metadata line relaxed to `>=3.12`;
+`[tool.uv.sources]` in `addons/smart-select/pyproject.toml` points uv at it,
+behind the same Apple Silicon and macOS 14 marker as the dependency. Because it
+is not a plain PyPI release, fused-render asks once before installing the Smart
+select add-on. Only the image segmenter (`load_image_segmenter`,
+`encode_image`, `predict_from_encoded`) is used; none of the video code paths
+are touched.
+
+## Known gaps
+
+- Crop is centred on the chosen ratio; there is no draggable crop rectangle yet.
+- Filter presets are CSS filter stacks rather than real LUTs, and baking one
+  applies the equivalent brightness/contrast/saturation move through Pillow.
+- Magic Expand (mflux's outpaint/reframe padding) is deliberately out of scope.
+- The generative tools (Remove / Insert, Smart select, Upscale) are not agent
+  tools yet: they need the page's `fused.ai.image` or the warm worker's models.
+- Documents and the images they use are kept until you delete the document in
+  the Files tab. Nothing prunes them automatically, except history beyond 200
+  steps per document.

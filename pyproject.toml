@@ -1,0 +1,27 @@
+[project]
+name = "photo-editor"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = []
+
+# Keep the model resident between calls. A fresh subprocess per request would
+# reload the weights every time; the shipped warm worker calls worker.py's
+# main() in one long-lived interpreter.
+[tool.fused-render.app]
+main = "worker.py"
+# Default is 15 minutes. Loading these weights is expensive enough that being
+# reaped mid-session is worse than holding the memory, so give a working
+# session an hour of idle room.
+idle_timeout_s = 3600
+
+# Not a distribution — this folder is a set of scripts, not something to build
+# and install. Without this uv would try to build the "project" itself and fail.
+[tool.uv]
+package = false
+no-build = true
+required-version = ">=0.12.17"
+required-environments = [
+    "sys_platform == 'darwin' and platform_machine == 'arm64' and platform_release == '23.0.0'",
+    "sys_platform == 'darwin' and platform_machine == 'arm64' and platform_release == '20.0.0'",
+    "sys_platform == 'darwin' and platform_machine == 'x86_64' and platform_release == '20.0.0'",
+]
