@@ -738,6 +738,78 @@
     .nd-side, .ex-side { border-left: 0; border-top: 1px solid var(--line); max-height: none; }
   }
 
+  .more-btn { display: none; }
+  .add-menu .menu-field { padding: 2px 5px 6px; }
+  .add-menu .menu-field input.compact { height: 36px; font-size: 13px; }
+
+  @media (max-width: 999px) {
+    #stage { touch-action: none; }
+    .topbar { flex-basis: 50px; gap: 6px; padding: 0 8px; }
+    .topbar .file-name, .topbar .save-state, .topbar .doc-meta, #snapBtn, #viewBtn, #zoomGroup { display: none; }
+    .topbar .icon-btn { width: 36px; height: 36px; }
+    .topbar .icon-btn svg { width: 18px; height: 18px; }
+    .more-btn { display: grid; }
+    .ghost-btn, .primary-btn { min-height: 40px; padding: 0 12px; }
+    .body { position: relative; flex-direction: column; }
+    .stage-wrap { order: 1; flex: 1 1 auto; min-height: 0; }
+    .toolbar {
+      order: 3; flex: 0 0 52px; flex-direction: row; gap: 4px; padding: 0 6px;
+      overflow-x: auto; overflow-y: hidden; border-right: 0; border-top: 1px solid var(--line);
+      scrollbar-width: none;
+    }
+    .toolbar::-webkit-scrollbar { display: none; }
+    .tool { width: 40px; height: 40px; flex: 0 0 auto; }
+    .tool svg { width: 20px; height: 20px; }
+    .tool-sep { width: 1px; height: 22px; margin: 0 3px; }
+    .layers, .props {
+      position: absolute; left: 0; right: 0; bottom: 52px; flex: none; height: min(62%, 440px); z-index: 7;
+      border: 0; border-top: 1px solid var(--line); box-shadow: var(--shadow);
+    }
+    .layers.collapsed, .props.collapsed { display: none; }
+    .panel-tabs { flex-basis: 42px; }
+    .panel-tabs button { padding: 0 14px; font-size: 13px; }
+    .panel-tabs .panel-collapse { flex-basis: 42px; }
+    .panel-collapse svg { transform: rotate(-90deg); }
+    .panel-strip {
+      position: absolute; bottom: 82px; z-index: 5; flex-direction: row; gap: 4px; height: 40px; padding: 0 12px 0 8px;
+      border-radius: 20px; background: var(--surface-2); border: 1px solid var(--line); box-shadow: var(--shadow);
+    }
+    .panel-strip.left { left: 8px; border-right: 1px solid var(--line); }
+    .panel-strip.right { right: 8px; border-left: 1px solid var(--line); }
+    .panel-strip.left svg { transform: rotate(-90deg); }
+    .panel-strip.right svg { transform: rotate(90deg); }
+    .panel-strip .vlabel { -webkit-writing-mode: horizontal-tb; writing-mode: horizontal-tb; }
+    .layer-foot { flex-basis: 44px; }
+    .layer-foot .icon-btn, .pages-head .icon-btn, .pane-head .icon-btn { width: 36px; height: 36px; }
+    .float-bar button { padding: 9px 9px; }
+    .add-menu { max-height: calc(100vh - 16px); overflow-y: auto; }
+    .add-menu button { min-height: 40px; }
+    .drop-veil { padding: 16px; }
+    .drop-card { padding: 24px 16px; }
+    .drop-card .row { flex-wrap: wrap; }
+    .modal-veil { padding: 8px; }
+    .ex-preview { min-height: 260px; }
+    .nd-grid { min-height: 200px; }
+    .status-bar { gap: 10px; overflow: hidden; }
+    .status-bar span { white-space: nowrap; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  }
+
+  @media (max-width: 600px) {
+    .brand span:last-child { display: none; }
+    .topbar { gap: 4px; }
+    .ghost-btn, .primary-btn { padding: 0 10px; font-size: 12px; }
+    .panel-strip { width: 40px; padding: 0; justify-content: center; }
+    .panel-strip .vlabel { display: none; }
+    .status-bar span:nth-child(n+3) { display: none; }
+    .page-pager .label { max-width: 120px; }
+  }
+
+  @media (max-width: 420px) {
+    .brand { display: none; }
+    .primary-btn span { display: none; }
+    .primary-btn { padding: 0 11px; }
+  }
+
   .preview-card { height: 100%; display: grid; place-items: center; text-align: center; color: var(--muted); }
   .preview-card .glyph { font-size: 40px; }
   .preview-card h2 { margin: 10px 0 4px; color: var(--ink); font-size: 16px; }
@@ -761,13 +833,14 @@
       <button class="icon-btn" id="undoBtn" title="Undo (⌘Z)" disabled><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-5"/></svg></button>
       <button class="icon-btn" id="redoBtn" title="Redo (⇧⌘Z)" disabled><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h5"/></svg></button>
     </div>
-    <div class="tool-group">
+    <div class="tool-group" id="zoomGroup">
       <button class="icon-btn" id="zoomOut" title="Zoom out (⌘−)"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M8 11h6M20 20l-3.5-3.5"/></svg></button>
       <span class="zoom-readout" id="zoomReadout" title="Fit to screen (⌘0)">100%</span>
       <button class="icon-btn" id="zoomIn" title="Zoom in (⌘+)"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M8 11h6M11 8v6M20 20l-3.5-3.5"/></svg></button>
     </div>
     <button class="ghost-btn" id="importBtn">Import</button>
-    <button class="primary-btn" id="exportBtn" disabled><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>Export</button>
+    <button class="primary-btn" id="exportBtn" disabled><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg><span>Export</span></button>
+    <button class="icon-btn more-btn" id="moreBtn" title="More: name, save, snap, view, zoom"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg></button>
   </header>
 
   <div class="body">
@@ -849,6 +922,7 @@
 
 <div class="add-menu" id="addMenu"></div>
 <div class="add-menu" id="viewMenu"></div>
+<div class="add-menu" id="moreMenu"></div>
 
 <div class="modal-veil" id="newDocVeil">
   <div class="modal">
@@ -1323,7 +1397,7 @@
     artboardLayer.add(artboard);
 
     transformer = new Konva.Transformer({
-      rotateEnabled: true, keepRatio: true, anchorSize: 8, anchorCornerRadius: 1, padding: 1, borderStrokeWidth: 1,
+      rotateEnabled: true, keepRatio: true, anchorSize: window.matchMedia("(pointer: coarse)").matches ? 14 : 8, anchorCornerRadius: 1, padding: 1, borderStrokeWidth: 1,
       rotateAnchorOffset: 24, ignoreStroke: true,
       enabledAnchors: ["top-left", "top-right", "bottom-left", "bottom-right", "middle-left", "middle-right", "top-center", "bottom-center"],
       boundBoxFunc: (oldBox, newBox) => (Math.abs(newBox.width) < 4 || Math.abs(newBox.height) < 4 ? oldBox : newBox),
@@ -1356,6 +1430,29 @@
     });
 
     stage.on("dragmove dragend", () => { positionFloatBar(); scheduleChrome(); });
+
+    let pinch = null;
+    stage.on("touchmove", (event) => {
+      const touches = event.evt.touches;
+      if (!touches || touches.length < 2) { pinch = null; return; }
+      event.evt.preventDefault();
+      const rect = stage.container().getBoundingClientRect();
+      const a = { x: touches[0].clientX - rect.left, y: touches[0].clientY - rect.top };
+      const b = { x: touches[1].clientX - rect.left, y: touches[1].clientY - rect.top };
+      const dist = Math.max(1, Math.hypot(b.x - a.x, b.y - a.y));
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      if (!pinch) {
+        if (stage.isDragging()) stage.stopDrag();
+        doc.layers.forEach((l) => { if (l.node.isDragging()) l.node.stopDrag(); });
+        pinch = { dist, mid };
+        return;
+      }
+      setZoom(state.zoom * dist / pinch.dist, mid);
+      stage.position({ x: stage.x() + mid.x - pinch.mid.x, y: stage.y() + mid.y - pinch.mid.y });
+      pinch = { dist, mid };
+      positionFloatBar();
+    });
+    stage.on("touchend touchcancel", () => { pinch = null; });
   }
 
   function applyThemeToCanvas() {
@@ -2462,14 +2559,18 @@
     catch (e) { return { left: true, right: true }; }
   })();
 
+  const narrowQuery = window.matchMedia("(max-width: 999px)");
+  const narrow = () => narrowQuery.matches;
+
   function setPanels(left, right, quiet) {
     const before = $("stageWrap").clientWidth, fitted = doc.ready && Math.abs(state.zoom - state.fitZoom) < 1e-6;
+    if (narrow() && left && right) { if (!panels.left) right = false; else if (!panels.right) left = false; else left = right = false; }
     panels.left = !!left; panels.right = !!right;
     $("leftPanel").classList.toggle("collapsed", !panels.left);
     $("rightPanel").classList.toggle("collapsed", !panels.right);
     $("leftStrip").classList.toggle("show", !panels.left);
     $("rightStrip").classList.toggle("show", !panels.right);
-    try { localStorage.setItem("photo_editor.panels", JSON.stringify(panels)); } catch (e) { }
+    if (!narrow()) { try { localStorage.setItem("photo_editor.panels", JSON.stringify(panels)); } catch (e) { } }
     if (quiet || !doc.ready) return;
     // Keep the page where the eye is: refit if it was fitted, else recentre.
     requestAnimationFrame(() => {
@@ -2481,6 +2582,13 @@
 
   function togglePanels() {
     if (panels.left || panels.right) setPanels(false, false); else setPanels(true, true);
+  }
+
+  function syncNarrowPanels() {
+    if (narrow()) { setPanels(false, false, true); return; }
+    let saved = { left: true, right: true };
+    try { saved = Object.assign(saved, JSON.parse(localStorage.getItem("photo_editor.panels") || "{}")); } catch (e) { }
+    setPanels(saved.left, saved.right, true);
   }
 
   // ---------------------------------------------------------------- View settings shared with Claude
@@ -3454,7 +3562,7 @@
   function openViewMenu() {
     const menu = $("viewMenu");
     renderViewMenu();
-    const r = $("viewBtn").getBoundingClientRect();
+    const r = ($("viewBtn").offsetParent ? $("viewBtn") : $("moreBtn")).getBoundingClientRect();
     menu.style.transform = "none";
     menu.classList.add("show");
     menu.style.left = clamp(r.left, 8, window.innerWidth - menu.offsetWidth - 8) + "px";
@@ -3467,6 +3575,54 @@
   }
   function onViewMenuOutside(e) {
     if (!$("viewMenu").contains(e.target) && !$("viewBtn").contains(e.target)) closeViewMenu();
+  }
+
+  function renderMoreMenu() {
+    const menu = $("moreMenu");
+    const parts = doc.ready ? docSummaryParts() : [];
+    menu.innerHTML = '<div class="menu-label">Document</div>' +
+      '<div class="menu-field"><input class="compact" id="moreName" value="' + esc(state.fileName) + '" spellcheck="false" aria-label="Document name" /></div>' +
+      (doc.ready ? '<button data-ma="page"><span class="check"></span><span>' + esc(parts.slice(0, 2).join(" · ")) + '</span></button>' : "") +
+      ($("saveState").hidden ? "" : '<button data-ma="save"><span class="check"></span>Save a PNG copy<span class="kbd">⌘S</span></button>') +
+      '<div class="sep"></div>' +
+      '<button data-ma="snap"><span class="check">' + (state.view.snap ? "✓" : "") + '</span>Snap to page, guides & grid</button>' +
+      '<button data-ma="view"><span class="check"></span>View options…</button>' +
+      '<div class="sep"></div>' +
+      '<button data-ma="zoomin"><span class="check"></span>Zoom in<span class="kbd">' + Math.round(state.zoom * 100) + '%</span></button>' +
+      '<button data-ma="zoomout"><span class="check"></span>Zoom out</button>' +
+      '<button data-ma="fit"' + (doc.ready ? "" : " disabled") + '><span class="check"></span>Fit to screen</button>';
+    const name = $("moreName");
+    name.oninput = () => { $("fileName").value = name.value; state.fileName = name.value || "Untitled"; };
+    name.onchange = () => renameDoc(state.fileName);
+    menu.querySelectorAll("[data-ma]").forEach((b) => {
+      b.onclick = () => {
+        const act = b.dataset.ma;
+        if (act === "snap") { toggleView("snap"); renderMoreMenu(); return; }
+        if (act === "zoomin") { setZoom(state.zoom * 1.25); renderMoreMenu(); return; }
+        if (act === "zoomout") { setZoom(state.zoom / 1.25); renderMoreMenu(); return; }
+        closeMoreMenu();
+        if (act === "page") openPageSetup();
+        else if (act === "save") saveCopy();
+        else if (act === "view") openViewMenu();
+        else if (act === "fit") fitToScreen();
+      };
+    });
+  }
+  function openMoreMenu() {
+    const menu = $("moreMenu");
+    renderMoreMenu();
+    const r = $("moreBtn").getBoundingClientRect();
+    menu.classList.add("show");
+    menu.style.left = clamp(r.right - menu.offsetWidth, 8, window.innerWidth - menu.offsetWidth - 8) + "px";
+    menu.style.top = (r.bottom + 6) + "px";
+    document.addEventListener("mousedown", onMoreMenuOutside, true);
+  }
+  function closeMoreMenu() {
+    $("moreMenu").classList.remove("show");
+    document.removeEventListener("mousedown", onMoreMenuOutside, true);
+  }
+  function onMoreMenuOutside(e) {
+    if (!$("moreMenu").contains(e.target) && !$("moreBtn").contains(e.target)) closeMoreMenu();
   }
 
   function applyView() {
@@ -6285,7 +6441,9 @@
     document.addEventListener("click", (e) => { const b = e.target.closest("[data-collapse]"); if (b) setPanels(b.dataset.collapse === "left" ? false : panels.left, b.dataset.collapse === "right" ? false : panels.right); });
     $("leftStrip").onclick = () => setPanels(true, panels.right);
     $("rightStrip").onclick = () => setPanels(panels.left, true);
-    setPanels(panels.left, panels.right, true);
+    $("moreBtn").onclick = () => { if ($("moreMenu").classList.contains("show")) closeMoreMenu(); else openMoreMenu(); };
+    syncNarrowPanels();
+    narrowQuery.addEventListener("change", () => { closeMoreMenu(); closeViewMenu(); syncNarrowPanels(); });
 
     $("addPageBtn").onclick = addPage;
     $("pagesToggle").onclick = () => {
@@ -6322,6 +6480,7 @@
         return;
       }
       if (event.key === "Escape" && $("viewMenu").classList.contains("show")) { closeViewMenu(); return; }
+      if (event.key === "Escape" && $("moreMenu").classList.contains("show")) { closeMoreMenu(); return; }
       if (meta && !typing && event.key === "'") { event.preventDefault(); toggleView("grid"); return; }
       if (meta && !typing && event.shiftKey && (event.key === ";" || event.key === ":")) { event.preventDefault(); toggleView("snap"); return; }
       if (meta && !typing && event.key === ";") { event.preventDefault(); toggleView("printGuides"); return; }
