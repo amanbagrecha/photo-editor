@@ -93,6 +93,24 @@ def _locked(doc_id: str):
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
+_DATA_MARK = os.sep + os.path.join(".fused", "data") + os.sep
+
+
+def relocate(path):
+    if not isinstance(path, str) or _DATA_MARK not in path or os.path.exists(path):
+        return path
+    moved = os.path.join(DATA_DIR, path.split(_DATA_MARK, 1)[1])
+    return moved if os.path.exists(moved) else path
+
+
+def relocate_paths(value):
+    if isinstance(value, dict):
+        return {key: relocate_paths(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [relocate_paths(item) for item in value]
+    return relocate(value)
+
+
 def _clean_layers(page: dict) -> dict:
     page = dict(page or {})
     layers = []
@@ -239,9 +257,12 @@ def create(name: str, snap: dict, source: str = "user", label: str = "new docume
 def load(doc_id: str) -> dict:
     path = os.path.join(doc_dir(doc_id), "doc.json")
     try:
-        return _read_json(path)
+        record = _read_json(path)
     except FileNotFoundError:
         raise DocumentError(f"No document {doc_id!r}") from None
+    if isinstance(record.get("snap"), dict):
+        record["snap"] = relocate_paths(record["snap"])
+    return record
 
 
 def commit(doc_id: str, snap: dict, label: str, source: str, base_rev: int | None = None,
@@ -327,9 +348,12 @@ def history(doc_id: str) -> list[dict]:
 def history_entry(doc_id: str, rev: int) -> dict:
     path = os.path.join(doc_dir(doc_id), "history", f"{int(rev):06d}.json")
     try:
-        return _read_json(path)
+        entry = _read_json(path)
     except FileNotFoundError:
         raise DocumentError(f"Document {doc_id!r} has no revision {rev} (it may have been pruned)") from None
+    if isinstance(entry.get("snap"), dict):
+        entry["snap"] = relocate_paths(entry["snap"])
+    return entry
 
 
 def snapshot_at(doc_id: str, rev: int) -> dict:

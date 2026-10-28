@@ -1067,6 +1067,7 @@
   // font until the real one arrived, so every text layer is laid out again
   // once it loads.
   const FONT_INDEX_FILE = ".fused/data/fonts/installed.json";
+  const appDataPath = (path) => { const i = (path || "").indexOf("/.fused/data/"); return i < 0 ? path : path.slice(i + 1); };
   const webFonts = { installed: [], index: {}, loading: {}, loaded: {}, readAt: 0 };
   async function readFontIndex(force) {
     if (!force && Date.now() - webFonts.readAt < 5000) return;
@@ -1099,7 +1100,7 @@
       if (!entry) { await readFontIndex(true); entry = webFonts.index[family]; }
       if (entry && entry.faces && entry.faces.length) {
         await Promise.all(entry.faces.map((face) => {
-          const ff = new FontFace(family, "url(" + fused.rawUrl(face.path) + ")",
+          const ff = new FontFace(family, "url(" + fused.rawUrl(appDataPath(face.path)) + ")",
             { weight: String(face.weight || 400), style: face.italic ? "italic" : "normal" });
           document.fonts.add(ff);
           return ff.load();
@@ -1480,6 +1481,15 @@
     });
   }
 
+  async function reportLayerImageError(layer) {
+    let missing = false;
+    if (layer.src && !/^(data|blob):/.test(layer.src)) {
+      try { missing = !(await fetch(layer.src, { method: "HEAD", cache: "no-store" })).ok; } catch (e) { missing = false; }
+    }
+    const file = (layer.workingPath || "").split("/").pop();
+    toast("Layer “" + layer.name + "”: " + (missing ? "its image file is missing" + (file ? " (" + file + ")" : "") : "its image could not be decoded") + "; the other layers are fine", true);
+  }
+
   function checkerPattern() {
     if (checkerPattern._c) return checkerPattern._c;
     const c = document.createElement("canvas");
@@ -1563,7 +1573,7 @@
           refreshThumb(layer);
           if (maskOwner === layer) ensureMaskNode();
           if (transformer.nodes().includes(node)) { transformer.forceUpdate(); uiLayer.batchDraw(); }
-        }).catch((e) => toast(e.message, true));
+        }).catch(() => reportLayerImageError(layer));
         if (layer.naturalWidth) {
           node.size({ width: layer.naturalWidth, height: layer.naturalHeight });
           node.offset({ x: layer.naturalWidth / 2, y: layer.naturalHeight / 2 });
