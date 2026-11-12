@@ -876,6 +876,7 @@
       <div class="layer-list" id="layerList"></div>
       <div class="layer-foot">
         <button class="icon-btn" id="addLayerBtn" title="New layer"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button class="icon-btn" id="selectAllBtn" title="Select all layers (⌘A)"><svg viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg></button>
         <button class="icon-btn" id="dupLayerBtn" title="Duplicate layer (⌘D)"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h9"/></svg></button>
         <button class="icon-btn" id="upLayerBtn" title="Bring forward (⌘])"><svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
         <button class="icon-btn" id="downLayerBtn" title="Send backward (⌘[)"><svg viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></svg></button>
@@ -1611,13 +1612,16 @@
     const node = layer.node;
     node.on("mousedown touchstart", (e) => {
       if (state.tool !== "move" || layer.locked) return;
-      if (doc.activeId !== layer.id) selectLayer(layer.id);
+      if (e.evt && e.evt.shiftKey) { toggleInSelection(layer); return; }
+      if (alignSet.size >= 2 && alignSet.has(layer.id)) { if (doc.activeId !== layer.id) { doc.activeId = layer.id; afterDocChange(); } return; }
+      if (alignSet.size) alignSet.clear();
+      if (doc.activeId !== layer.id || transformer.nodes().length > 1) selectLayer(layer.id);
       e.cancelBubble = false;
     });
-    node.on("click tap", () => { if (state.tool === "move" && !layer.locked) selectLayer(layer.id); });
+    node.on("click tap", (e) => { if (state.tool === "move" && !layer.locked && !(e.evt && e.evt.shiftKey) && !alignSet.has(layer.id)) selectLayer(layer.id); });
     node.on("dblclick dbltap", () => { if (layer.type === "text" && state.tool === "move") openTextEditor(layer); });
     node.on("dragstart", () => { if (doc.activeId !== layer.id) selectLayer(layer.id); closePosMenu(); });
-    node.on("dragmove", (e) => { snapLayer(layer, e); positionFloatBar(); renderPropsSoft(); if (maskOwner === layer) ensureMaskNode(); });
+    node.on("dragmove", (e) => { if (transformer.nodes().length < 2) snapLayer(layer, e); positionFloatBar(); renderPropsSoft(); if (maskOwner === layer) ensureMaskNode(); });
     node.on("dragend", () => { clearSnapLines(); commitHistory("move"); });
     node.on("transform", () => {
       if (layer.type === "text") {
@@ -1723,6 +1727,29 @@
   const clip = { layers: null };
   const freshLayerId = () => "L" + (++layerSeq) + "-" + Date.now().toString(36);
 
+  const pickable = (l) => l.visible && !l.locked;
+
+  function setSelection(list) {
+    alignSet.clear();
+    if (list.length > 1) list.forEach((l) => alignSet.add(l.id));
+    if (state.tool !== "move" && list.length) setTool("move");
+    selectLayer(list.length ? list[list.length - 1].id : null);
+  }
+
+  function selectAllLayers() {
+    if (!doc.ready) return;
+    closeTextEditor(false);
+    const list = doc.layers.filter(pickable);
+    if (!list.length) { toast(doc.layers.length ? "Every layer on this page is hidden or locked" : "Nothing on this page to select", true); return; }
+    setSelection(list);
+    toast("Selected " + layersWord(list) + (list.length < doc.layers.length ? " (hidden and locked layers left out)" : "") + " · Esc to clear");
+  }
+
+  function toggleInSelection(layer) {
+    const list = selectedLayers();
+    setSelection(list.includes(layer) ? list.filter((l) => l !== layer) : list.concat(layer));
+  }
+
   function selectedLayers() {
     const picked = doc.layers.filter((l) => alignSet.has(l.id));
     if (picked.length) return picked;
@@ -1815,10 +1842,11 @@
   function afterDocChange(opts) {
     opts = opts || {};
     const layer = activeLayer();
+    const group = state.tool === "move" ? doc.layers.filter((l) => alignSet.has(l.id) && pickable(l)) : [];
     const selectable = layer && !layer.locked && layer.visible && state.tool === "move";
-    transformer.nodes(selectable ? [layer.node] : []);
-    transformer.keepRatio(!layer || layer.type !== "rect" && layer.type !== "ellipse");
-    transformer.enabledAnchors(layer && layer.type === "text"
+    transformer.nodes(group.length > 1 ? group.map((l) => l.node) : selectable ? [layer.node] : []);
+    transformer.keepRatio(group.length > 1 || !layer || layer.type !== "rect" && layer.type !== "ellipse");
+    transformer.enabledAnchors(group.length > 1 ? ["top-left", "top-right", "bottom-left", "bottom-right"] : layer && layer.type === "text"
       ? ["top-left", "top-right", "bottom-left", "bottom-right", "middle-left", "middle-right"]
       : ["top-left", "top-right", "bottom-left", "bottom-right", "middle-left", "middle-right", "top-center", "bottom-center"]);
     uiLayer.batchDraw();
@@ -2785,7 +2813,7 @@
   function wireAlignBar(root) {
     root.querySelectorAll("[data-align-many]").forEach((b) => b.onclick = () => alignLayers(doc.layers.filter((l) => alignSet.has(l.id)), b.dataset.alignMany, "selection"));
     root.querySelectorAll("[data-dist]").forEach((b) => b.onclick = () => distributeLayers(doc.layers.filter((l) => alignSet.has(l.id)), b.dataset.dist));
-    root.querySelectorAll("[data-align-clear]").forEach((b) => b.onclick = () => { alignSet.clear(); renderLayers(); });
+    root.querySelectorAll("[data-align-clear]").forEach((b) => b.onclick = () => { alignSet.clear(); afterDocChange(); });
   }
 
   // A text label and the box add_text() put behind it ("<name> box") move as
@@ -3788,7 +3816,7 @@
   function renderFloatBar() {
     const bar = $("floatBar");
     const layer = activeLayer();
-    if (!layer || state.tool !== "move" || layer.locked || !layer.visible) { bar.classList.remove("show"); closePosMenu(); return; }
+    if (!layer || state.tool !== "move" || layer.locked || !layer.visible || transformer.nodes().length > 1) { bar.classList.remove("show"); closePosMenu(); return; }
     const b = (act, label, paths, cls) => '<button data-act="' + act + '" class="' + (cls || "") + '" title="' + label + '">' + icon(paths) + '<span class="lbl">' + label + "</span></button>";
     let html = "";
     if (layer.type === "image") {
@@ -5772,6 +5800,53 @@
     shaping.layer.konva.batchDraw();
   }
 
+  const marquee = { active: false, start: null, add: false, rect: null };
+
+  function beginMarquee(add) {
+    const start = stagePoint();
+    if (!start || !doc.ready) return;
+    marquee.active = true; marquee.start = start; marquee.add = add;
+    if (!marquee.rect) {
+      marquee.rect = new Konva.Rect({ listening: false, visible: false, strokeScaleEnabled: false, strokeWidth: 1, dash: [4, 3] });
+      uiLayer.add(marquee.rect);
+    }
+    const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#3b82f6";
+    marquee.rect.setAttrs({ stroke: accent, visible: false });
+  }
+
+  function marqueeBox() {
+    const p = stagePoint();
+    if (!p) return null;
+    const s = marquee.start;
+    return { x: Math.min(s.x, p.x), y: Math.min(s.y, p.y), width: Math.abs(p.x - s.x), height: Math.abs(p.y - s.y) };
+  }
+
+  function moveMarquee() {
+    if (!marquee.active) return;
+    const box = marqueeBox();
+    if (!box) return;
+    if (box.width * state.zoom < 4 && box.height * state.zoom < 4) return;
+    marquee.rect.setAttrs(Object.assign({ visible: true }, box));
+    uiLayer.batchDraw();
+  }
+
+  function endMarquee() {
+    if (!marquee.active) return;
+    marquee.active = false;
+    const shown = marquee.rect.visible();
+    marquee.rect.visible(false);
+    uiLayer.batchDraw();
+    if (!shown) return;
+    const box = marqueeBox() || { x: marquee.rect.x(), y: marquee.rect.y(), width: marquee.rect.width(), height: marquee.rect.height() };
+    const hit = doc.layers.filter((l) => {
+      if (!pickable(l)) return false;
+      const r = l.node.getClientRect({ relativeTo: stage });
+      return r.x < box.x + box.width && r.x + r.width > box.x && r.y < box.y + box.height && r.y + r.height > box.y;
+    });
+    if (marquee.add) setSelection(selectedLayers().concat(hit.filter((l) => !selectedLayers().includes(l))));
+    else setSelection(hit);
+  }
+
   function endShape() {
     if (!shaping.active) return;
     shaping.active = false;
@@ -5952,6 +6027,7 @@
     $("upLayerBtn").disabled = !has || layerIndex(active) >= doc.layers.length - 1;
     $("downLayerBtn").disabled = !has || layerIndex(active) <= 0;
     $("addLayerBtn").disabled = !doc.ready;
+    $("selectAllBtn").disabled = !doc.layers.some(pickable);
   }
 
   // Text and lines read better as a glyph than as a sliver of a thumbnail;
@@ -5975,7 +6051,8 @@
       if (e.shiftKey || e.metaKey || e.ctrlKey) {
         if (!alignSet.size && doc.activeId && doc.activeId !== layer.id) alignSet.add(doc.activeId);
         if (alignSet.has(layer.id)) alignSet.delete(layer.id); else alignSet.add(layer.id);
-        renderLayers();
+        if (alignSet.has(layer.id)) doc.activeId = layer.id;
+        afterDocChange();
         return;
       }
       alignSet.clear();
@@ -6578,6 +6655,7 @@
       renderPages();
     };
     $("addLayerBtn").onclick = (e) => openAddMenu(e.currentTarget);
+    $("selectAllBtn").onclick = selectAllLayers;
     $("dupLayerBtn").onclick = () => { const l = activeLayer(); if (l) duplicateLayer(l); };
     $("upLayerBtn").onclick = () => { const l = activeLayer(); if (l) moveLayer(l, 1); };
     $("downLayerBtn").onclick = () => { const l = activeLayer(); if (l) moveLayer(l, -1); };
@@ -6589,12 +6667,17 @@
       if (state.tool === "brush") { beginStroke(e); return; }
       if (state.tool === "eraser") { beginErase(); return; }
       if (state.tool === "rect" || state.tool === "ellipse" || state.tool === "line" || state.tool === "text") { beginShape(e); return; }
-      if (state.tool === "move" && (e.target === stage || e.target === artboard)) { closeTextEditor(false); selectLayer(null); }
+      if (state.tool === "move" && (e.target === stage || e.target === artboard)) {
+        closeTextEditor(false);
+        if (e.evt && e.evt.shiftKey) { beginMarquee(true); return; }
+        alignSet.clear(); selectLayer(null);
+        if (!(e.evt && e.evt.touches)) beginMarquee(false);
+      }
     });
-    stage.on("mousemove touchmove", (e) => { moveStroke(); moveErase(); moveShape(e); trackCursor(); });
+    stage.on("mousemove touchmove", (e) => { moveStroke(); moveErase(); moveShape(e); moveMarquee(); trackCursor(); });
     stage.on("mouseleave", () => { state.cursor = null; scheduleChrome(true); });
-    window.addEventListener("mouseup", () => { endStroke(); endErase(); endShape(); });
-    window.addEventListener("touchend", () => { endStroke(); endErase(); endShape(); });
+    window.addEventListener("mouseup", () => { endStroke(); endErase(); endShape(); endMarquee(); });
+    window.addEventListener("touchend", () => { endStroke(); endErase(); endShape(); endMarquee(); });
     stage.on("contextmenu", (e) => e.evt.preventDefault());
 
     document.addEventListener("keydown", (event) => {
@@ -6620,6 +6703,7 @@
       if (meta && event.key === "0") { event.preventDefault(); fitToScreen(); }
       else if (meta && (event.key === "=" || event.key === "+")) { event.preventDefault(); setZoom(state.zoom * 1.25); }
       else if (meta && event.key === "-") { event.preventDefault(); setZoom(state.zoom / 1.25); }
+      else if (meta && !event.shiftKey && event.key.toLowerCase() === "a") { event.preventDefault(); selectAllLayers(); }
       else if (meta && event.key.toLowerCase() === "d") { event.preventDefault(); if (layer) duplicateLayer(layer); }
       else if (meta && !event.shiftKey && (event.key.toLowerCase() === "c" || event.key.toLowerCase() === "x") && !String(window.getSelection() || "")) { if (copyLayers(event.key.toLowerCase() === "x")) event.preventDefault(); }
       else if (meta && !event.shiftKey && event.key.toLowerCase() === "v") { if (pasteLayers()) event.preventDefault(); }
@@ -6627,10 +6711,14 @@
       else if (meta && event.key === "[") { event.preventDefault(); if (layer) moveLayer(layer, -1); }
       else if (event.key === "Backspace" || event.key === "Delete") {
         if (state.tool === "brush") clearMask();
-        else if (layer && state.tool === "move") { removeLayer(layer); toast("Deleted " + layer.name); }
+        else if (layer && state.tool === "move") {
+          const list = selectedLayers();
+          if (list.length > 1) { list.forEach((l) => removeLayer(l, true)); alignSet.clear(); afterDocChange(); commitHistory("delete " + layersWord(list)); toast("Deleted " + layersWord(list)); }
+          else { removeLayer(layer); toast("Deleted " + layer.name); }
+        }
       }
       else if (event.key === "Enter" && state.tool === "crop" && cropRect) { event.preventDefault(); applyCrop(); }
-      else if (event.key === "Escape") { if (alignSet.size) { alignSet.clear(); renderLayers(); } else if (state.tool !== "move") setTool("move"); else selectLayer(null); }
+      else if (event.key === "Escape") { if (alignSet.size) { alignSet.clear(); afterDocChange(); } else if (state.tool !== "move") setTool("move"); else selectLayer(null); }
       else if (event.key === " " && !state.spaceDown) { event.preventDefault(); state.spaceDown = true; syncModeToTool(); }
       else if ((event.key === "PageDown" || event.key === "PageUp") && doc.ready) { event.preventDefault(); switchPage(doc.page + (event.key === "PageDown" ? 1 : -1)); }
       else if (!meta && !event.altKey) {
@@ -6646,8 +6734,10 @@
         else if (layer && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key) && state.tool === "move") {
           event.preventDefault();
           const step = event.shiftKey ? 10 : 1;
-          layer.node.move({ x: event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0, y: event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0 });
-          afterNodeTransform(layer);
+          selectedLayers().forEach((l) => {
+            l.node.move({ x: event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0, y: event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0 });
+            afterNodeTransform(l);
+          });
           commitHistorySoon("nudge");
         }
       }
