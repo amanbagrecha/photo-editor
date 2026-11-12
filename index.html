@@ -300,6 +300,15 @@
   .layer-foot .icon-btn svg { width: 14px; height: 14px; }
   .layer-foot .spacer { flex: 1; }
 
+  .layer-row.in-group { padding-left: 16px; border-left: 2px solid var(--line); }
+  .group-row {
+    display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 10px; min-height: 30px; font-size: 12px;
+    color: var(--muted); border-bottom: 1px solid var(--line); cursor: default;
+  }
+  .group-row:hover { background: var(--surface-2); }
+  .group-row.picked { color: var(--ink-strong); background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+  .group-row svg { width: 14px; height: 14px; flex: 0 0 auto; }
+  .group-row .group-name { flex: 1; font-weight: 600; color: var(--ink); }
   .layer-row.picked { box-shadow: inset 3px 0 0 var(--accent); background: var(--accent-soft); }
   .layer-controls.aligning { display: block; }
   .align-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
@@ -1088,7 +1097,7 @@
     doc.layers.forEach((l) => {
       if (l.type !== "text" || !l.node) return;
       if (typeof l.node._setTextData === "function") l.node._setTextData();
-      l.konva.batchDraw();
+      applyTextPixelation(l);
       refreshThumb(l);
     });
   }
@@ -1530,6 +1539,8 @@
       locked: !!spec.locked,
       opacity: spec.opacity == null ? 1 : spec.opacity,
       blend: spec.blend || "normal",
+      groupId: spec.groupId || "",
+      pixelation: spec.type === "text" ? clamp(Number(spec.pixelation) || 0, 0, 64) : 0,
       konva: new Konva.Layer(),
       node: null,
       thumb: "",
@@ -1551,8 +1562,38 @@
     layer.node = buildNode(layer, spec.attrs || {});
     layer.konva.add(layer.node);
     wireNode(layer);
+    applyTextPixelation(layer);
     applyLayerStyle(layer);
     return layer;
+  }
+
+  // Pixelate the text layer itself so the photo remains visible beneath its
+  // softened, blocky edges. Rebuild the cache after edits to the text geometry.
+  // Thin the alpha mask slightly for Light weight so fonts without a native
+  // 300 face (for example Times New Roman) still render visibly lighter.
+  function thinTextFilter(imageData) {
+    const { data, width, height } = imageData;
+    const alpha = new Uint8ClampedArray(width * height);
+    for (let i = 0, p = 3; i < alpha.length; i++, p += 4) alpha[i] = data[p];
+    for (let y = 1; y < height - 1; y++) for (let x = 1; x < width - 1; x++) {
+      const i = y * width + x;
+      let a = 255;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) a = Math.min(a, alpha[i + dy * width + dx]);
+      data[i * 4 + 3] = Math.round(alpha[i] * 0.8 + a * 0.2);
+    }
+  }
+
+  function applyTextPixelation(layer) {
+    if (!layer || layer.type !== "text" || !layer.node) return;
+    const node = layer.node;
+    node.clearCache();
+    const filters = [];
+    if (/^300(?:\s|$)/.test(node.fontStyle())) filters.push(thinTextFilter);
+    if (layer.pixelation > 0) filters.push(Konva.Filters.Pixelate);
+    node.filters(filters);
+    if (layer.pixelation > 0) node.pixelSize(layer.pixelation);
+    if (filters.length) node.cache({ pixelRatio: 1 });
+    layer.konva.batchDraw();
   }
 
   function defaultName(type) {
@@ -1614,6 +1655,10 @@
       if (state.tool !== "move" || layer.locked) return;
       if (e.evt && e.evt.shiftKey) { toggleInSelection(layer); return; }
       if (alignSet.size >= 2 && alignSet.has(layer.id)) { if (doc.activeId !== layer.id) { doc.activeId = layer.id; afterDocChange(); } return; }
+      if (layer.groupId) {
+        const members = withGroups([layer]);
+        if (members.length > 1) { setSelection(members, layer); e.cancelBubble = false; return; }
+      }
       if (alignSet.size) alignSet.clear();
       if (doc.activeId !== layer.id || transformer.nodes().length > 1) selectLayer(layer.id);
       e.cancelBubble = false;
@@ -1640,7 +1685,7 @@
       }
       if (maskOwner === layer) ensureMaskNode();
     });
-    node.on("transformend", () => { refreshThumb(layer); });
+    node.on("transformend", () => { applyTextPixelation(layer); refreshThumb(layer); });
   }
 
   function applyLayerStyle(layer) {
@@ -1708,6 +1753,7 @@
   function duplicateLayer(layer) {
     const snap = serializeLayer(layer);
     snap.id = null;
+    snap.groupId = "";
     snap.name = layer.name + " copy";
     snap.attrs.x += 24; snap.attrs.y += 24;
     const copy = createLayer(snap);
@@ -1729,11 +1775,68 @@
 
   const pickable = (l) => l.visible && !l.locked;
 
-  function setSelection(list) {
+  function setSelection(list, active) {
     alignSet.clear();
     if (list.length > 1) list.forEach((l) => alignSet.add(l.id));
     if (state.tool !== "move" && list.length) setTool("move");
-    selectLayer(list.length ? list[list.length - 1].id : null);
+    selectLayer(list.length ? (active && list.includes(active) ? active : list[list.length - 1]).id : null);
+  }
+
+  // ------------- groups
+  //
+  // A group is the layers that share a groupId on one page. They stay
+  // separate layers (each keeps its own blend and opacity); clicking any of
+  // them on the canvas selects them all.
+
+  const newGroupId = () => "G" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const groupMembers = (layer) => layer.groupId ? doc.layers.filter((l) => l.groupId === layer.groupId) : [layer];
+
+  function withGroups(list) {
+    const ids = new Set();
+    list.forEach((l) => groupMembers(l).forEach((m) => ids.add(m.id)));
+    return doc.layers.filter((l) => ids.has(l.id) && pickable(l));
+  }
+
+  function groupNumbers() {
+    const nums = new Map();
+    doc.layers.forEach((l) => { if (l.groupId && !nums.has(l.groupId)) nums.set(l.groupId, nums.size + 1); });
+    return nums;
+  }
+
+  function selectionIsOneGroup(list) {
+    return list.length > 1 && !!list[0].groupId && list.every((l) => l.groupId === list[0].groupId) && groupMembers(list[0]).length === list.length;
+  }
+
+  function groupSelection() {
+    const list = selectedLayers();
+    if (list.length < 2) { toast("Select two or more layers to group — ⌘A, Shift-click or drag a box", true); return; }
+    if (selectionIsOneGroup(list)) { toast("Those layers are already a group"); return; }
+    closeTextEditor(false);
+    const gid = newGroupId();
+    const top = Math.max(...list.map(layerIndex));
+    const rest = doc.layers.filter((l) => !list.includes(l));
+    const at = top + 1 - list.length;
+    doc.layers = rest.slice(0, at).concat(list, rest.slice(at));
+    list.forEach((l) => { l.groupId = gid; });
+    syncZOrder();
+    setSelection(list, activeLayer());
+    commitHistory("group " + list.length + " layers");
+    toast("Grouped " + list.length + " layers as Group " + groupNumbers().get(gid) + " · ⇧⌘G to ungroup");
+  }
+
+  function ungroupSelection() {
+    const ids = new Set(selectedLayers().map((l) => l.groupId).filter(Boolean));
+    if (!ids.size) { toast("Nothing in the selection is grouped", true); return; }
+    doc.layers.forEach((l) => { if (ids.has(l.groupId)) l.groupId = ""; });
+    afterDocChange();
+    commitHistory("ungroup");
+    toast(ids.size === 1 ? "Ungrouped" : "Ungrouped " + ids.size + " groups");
+  }
+
+  function regroupSpecs(specs) {
+    const map = new Map();
+    specs.forEach((sp) => { if (sp.groupId) { if (!map.has(sp.groupId)) map.set(sp.groupId, newGroupId()); sp.groupId = map.get(sp.groupId); } });
+    return specs;
   }
 
   function selectAllLayers() {
@@ -1746,8 +1849,8 @@
   }
 
   function toggleInSelection(layer) {
-    const list = selectedLayers();
-    setSelection(list.includes(layer) ? list.filter((l) => l !== layer) : list.concat(layer));
+    const list = selectedLayers(), members = withGroups([layer]);
+    setSelection(list.includes(layer) ? list.filter((l) => !members.includes(l)) : doc.layers.filter((l) => list.includes(l) || members.includes(l)), layer);
   }
 
   function selectedLayers() {
@@ -1778,8 +1881,7 @@
     closeTextEditor(false);
     flushHistorySoon();
     const offset = clip.layers.some((s) => doc.layers.some((l) => l.id === s.id)) ? 24 : 0;
-    const copies = clip.layers.map((s) => {
-      const spec = JSON.parse(JSON.stringify(s));
+    const copies = regroupSpecs(JSON.parse(JSON.stringify(clip.layers))).map((spec) => {
       spec.id = freshLayerId();
       spec.attrs.x += offset; spec.attrs.y += offset;
       return insertLayer(createLayer(spec));
@@ -1804,7 +1906,7 @@
     closeTextEditor(false);
     flushHistorySoon();
     const specs = list.map(serializeLayer);
-    const fresh = () => specs.map((sp) => Object.assign(JSON.parse(JSON.stringify(sp)), { id: freshLayerId() }));
+    const fresh = () => regroupSpecs(specs.map((sp) => Object.assign(JSON.parse(JSON.stringify(sp)), { id: freshLayerId() })));
     targets.forEach((j) => {
       const p = doc.pages[j], copies = fresh();
       doc.pages[j] = Object.assign({}, p, { layers: (p.layers || []).concat(copies), activeId: copies[copies.length - 1].id });
@@ -1870,6 +1972,8 @@
     if (layer.type === "line") Object.assign(attrs, { points: n.points().slice(), stroke: n.stroke(), fill: n.fill(), strokeWidth: n.strokeWidth(), pointerAtEnding: n.pointerAtEnding(), pointerAtBeginning: n.pointerAtBeginning(), dash: n.dash().slice(), pointerLength: n.pointerLength(), pointerWidth: n.pointerWidth() });
     if (layer.type === "text") Object.assign(attrs, { text: n.text(), width: n.width(), fontSize: n.fontSize(), fontFamily: n.fontFamily(), fontStyle: n.fontStyle(), fill: n.fill(), align: n.align(), lineHeight: n.lineHeight(), letterSpacing: n.letterSpacing(), stroke: n.stroke(), strokeWidth: n.strokeWidth(), textDecoration: n.textDecoration() });
     const out = { id: layer.id, type: layer.type, name: layer.name, visible: layer.visible, locked: layer.locked, opacity: layer.opacity, blend: layer.blend, attrs };
+    if (layer.groupId) out.groupId = layer.groupId;
+    if (layer.type === "text") out.pixelation = layer.pixelation;
     if (layer.type === "image") Object.assign(out, {
       sessionId: layer.sessionId, workingPath: layer.workingPath, src: layer.src, naturalWidth: layer.naturalWidth, naturalHeight: layer.naturalHeight,
       adjust: Object.assign({}, layer.adjust), filter: layer.filter, filterStrength: layer.filterStrength,
@@ -2807,6 +2911,9 @@
       ["left", "center", "right", "top", "middle", "bottom"].map((a) => '<button class="icon-btn" data-align-many="' + a + '" title="Align ' + ALIGN_LABEL[a] + '">' + icon(ALIGN_ICONS[a]) + "</button>").join("") +
       '<button class="icon-btn" data-dist="h" title="Distribute horizontally"' + (alignSet.size < 3 ? " disabled" : "") + ">" + icon(ALIGN_ICONS.distH) + "</button>" +
       '<button class="icon-btn" data-dist="v" title="Distribute vertically"' + (alignSet.size < 3 ? " disabled" : "") + ">" + icon(ALIGN_ICONS.distV) + "</button>" +
+      (selectionIsOneGroup(selectedLayers())
+        ? '<button class="ghost-btn tiny" data-group-act="ungroup" title="Ungroup (⇧⌘G)">Ungroup</button>'
+        : '<button class="ghost-btn tiny" data-group-act="group" title="Group (⌘G)">Group</button>') +
       '<button class="ghost-btn tiny" data-align-clear title="Clear the selection (Esc)">Done</button></div>';
   }
 
@@ -2814,6 +2921,7 @@
     root.querySelectorAll("[data-align-many]").forEach((b) => b.onclick = () => alignLayers(doc.layers.filter((l) => alignSet.has(l.id)), b.dataset.alignMany, "selection"));
     root.querySelectorAll("[data-dist]").forEach((b) => b.onclick = () => distributeLayers(doc.layers.filter((l) => alignSet.has(l.id)), b.dataset.dist));
     root.querySelectorAll("[data-align-clear]").forEach((b) => b.onclick = () => { alignSet.clear(); afterDocChange(); });
+    root.querySelectorAll("[data-group-act]").forEach((b) => b.onclick = () => { if (b.dataset.groupAct === "group") groupSelection(); else ungroupSelection(); });
   }
 
   // A text label and the box add_text() put behind it ("<name> box") move as
@@ -3961,6 +4069,7 @@
   }
 
   function afterNodeTransform(layer) {
+    applyTextPixelation(layer);
     layer.konva.batchDraw();
     if (maskOwner === layer) ensureMaskNode();
     transformer.forceUpdate();
@@ -5843,8 +5952,8 @@
       const r = l.node.getClientRect({ relativeTo: stage });
       return r.x < box.x + box.width && r.x + r.width > box.x && r.y < box.y + box.height && r.y + r.height > box.y;
     });
-    if (marquee.add) setSelection(selectedLayers().concat(hit.filter((l) => !selectedLayers().includes(l))));
-    else setSelection(hit);
+    if (marquee.add) setSelection(withGroups(selectedLayers().concat(hit)));
+    else setSelection(withGroups(hit));
   }
 
   function endShape() {
@@ -5914,6 +6023,7 @@
       const value = ta.value.trim() ? ta.value : "Text";
       if (value !== layer.node.text()) { layer.node.text(value); commitHistory("edit text"); }
     }
+    applyTextPixelation(layer);
     layer.node.visible(true); layer.konva.batchDraw();
     afterDocChange();
     refreshThumb(layer);
@@ -5994,6 +6104,9 @@
     const active = activeLayer();
     const controls = $("layerControls");
     [...alignSet].forEach((id) => { if (!doc.layers.some((l) => l.id === id)) alignSet.delete(id); });
+    const groupSize = new Map();
+    doc.layers.forEach((l) => { if (l.groupId) groupSize.set(l.groupId, (groupSize.get(l.groupId) || 0) + 1); });
+    doc.layers.forEach((l) => { if (l.groupId && groupSize.get(l.groupId) < 2) l.groupId = ""; });
     if (alignSet.size >= 2) {
       controls.style.display = "";
       controls.classList.add("aligning");
@@ -6013,14 +6126,39 @@
     if (!doc.layers.length) {
       list.innerHTML = '<div class="empty-layers">' + (doc.ready ? "No layers yet.<br />Draw a shape, add text, or place an image." : "Open a photo or start a blank canvas to begin.") + "</div>";
     } else {
-      list.innerHTML = doc.layers.slice().reverse().map((l) =>
-        '<div class="layer-row' + (l.id === doc.activeId ? " active" : "") + (alignSet.has(l.id) ? " picked" : "") + (l.visible ? "" : " hidden-layer") + '" data-id="' + l.id + '" draggable="true">' +
+      const nums = groupNumbers();
+      let prevGroup = "";
+      list.innerHTML = doc.layers.slice().reverse().map((l) => {
+        let head = "";
+        if (l.groupId && l.groupId !== prevGroup) {
+          const members = doc.layers.filter((m) => m.groupId === l.groupId);
+          const all = members.every((m) => alignSet.has(m.id));
+          head = '<div class="group-row' + (all ? " picked" : "") + '" data-group="' + l.groupId + '" title="Click to select the group">' + icon(["M3 7V5a2 2 0 0 1 2-2h2", "M17 3h2a2 2 0 0 1 2 2v2", "M21 17v2a2 2 0 0 1-2 2h-2", "M7 21H5a2 2 0 0 1-2-2v-2", "M7 7h6v6H7z", "M11 11h6v6h-6z"]) +
+            '<span class="group-name">Group ' + nums.get(l.groupId) + '</span><span>' + members.length + ' layers</span>' +
+            '<button class="ghost-btn tiny" data-ungroup="' + l.groupId + '" title="Ungroup">Ungroup</button></div>';
+        }
+        prevGroup = l.groupId;
+        return head +
+        '<div class="layer-row' + (l.groupId ? " in-group" : "") + (l.id === doc.activeId ? " active" : "") + (alignSet.has(l.id) ? " picked" : "") + (l.visible ? "" : " hidden-layer") + '" data-id="' + l.id + '" draggable="true">' +
         '<button class="eye' + (l.visible ? "" : " off") + '" title="Toggle visibility">' + icon(l.visible ? I.eye : I.eyeOff) + "</button>" +
         layerThumbHtml(l) +
         '<div class="layer-name" title="Double-click to rename"><span class="label">' + esc(l.name) + '</span><span class="kind">' + kindLabel(l) + "</span></div>" +
         '<button class="lock' + (l.locked ? "" : " off") + '" title="' + (l.locked ? "Unlock" : "Lock") + '">' + icon(l.locked ? I.lock : I.unlock) + "</button>" +
-        "</div>").join("");
+        "</div>";
+      }).join("");
       list.querySelectorAll(".layer-row").forEach(wireLayerRow);
+      list.querySelectorAll(".group-row").forEach((row) => {
+        row.onclick = (e) => {
+          const gid = row.dataset.group;
+          if (e.target.closest("[data-ungroup]")) {
+            doc.layers.forEach((l) => { if (l.groupId === gid) l.groupId = ""; });
+            afterDocChange(); commitHistory("ungroup"); toast("Ungrouped");
+            return;
+          }
+          const members = doc.layers.filter((l) => l.groupId === gid && pickable(l));
+          if (members.length) setSelection(members);
+        };
+      });
     }
     const has = !!active;
     $("dupLayerBtn").disabled = !has; $("delLayerBtn").disabled = !has;
@@ -6218,11 +6356,12 @@
         html += section("textContent", "Text",
           '<textarea id="textValue" spellcheck="false">' + esc(n.text()) + "</textarea>" +
           '<div class="grid2" style="margin-top:8px"><label class="mini">Font<select data-attr="fontFamily">' + fontChoices(n.fontFamily()).map((f) => '<option' + (n.fontFamily() === f ? " selected" : "") + ">" + f + "</option>").join("") + "</select></label>" +
-          '<label class="mini">Weight<select data-attr="fontStyle">' + [["400", "Regular"], ["500", "Medium"], ["600", "Semibold"], ["700", "Bold"], ["italic", "Italic"], ["700 italic", "Bold italic"]].map(([v, l]) => '<option value="' + v + '"' + (n.fontStyle() === v ? " selected" : "") + ">" + l + "</option>").join("") + "</select></label></div>" +
+          '<label class="mini">Weight<select data-attr="fontStyle">' + [["300", "Light"], ["400", "Regular"], ["500", "Medium"], ["600", "Semibold"], ["700", "Bold"], ["italic", "Italic"], ["700 italic", "Bold italic"]].map(([v, l]) => '<option value="' + v + '"' + (n.fontStyle() === v ? " selected" : "") + ">" + l + "</option>").join("") + "</select></label></div>" +
           '<div class="grid2" style="margin-top:6px">' + numField("fontSize", "Size", n.fontSize()) + numField("letterSpacing", "Tracking", n.letterSpacing(), 0.5) + numField("lineHeight", "Line height", n.lineHeight(), 0.05) +
           '<label class="mini">Align<div class="seg icons">' + [["left", I.alignL], ["center", I.alignC], ["right", I.alignR]].map(([a, ic]) => '<button data-align="' + a + '" class="' + (n.align() === a ? "active" : "") + '">' + icon(ic) + "</button>").join("") + "</div></label></div>" +
           '<div class="grid2" style="margin-top:8px">' + colorField("fill", "Color", n.fill()) + colorField("stroke", "Outline", n.strokeWidth() ? n.stroke() : "") + "</div>" + swatchRow("fill") +
-          '<div class="grid2" style="margin-top:8px">' + numField("strokeWidth", "Outline width", n.strokeWidth()) + "</div>");
+          '<div class="grid2" style="margin-top:8px">' + numField("strokeWidth", "Outline width", n.strokeWidth()) + "</div>" +
+          '<div class="field" style="margin-top:10px"><label for="textPixelation"><span>Pixelation</span><span class="value" id="textPixelationValue">' + (layer.pixelation ? (Number.isInteger(layer.pixelation) ? layer.pixelation : layer.pixelation.toFixed(1)) + " px" : "Off") + '</span></label><input type="range" id="textPixelation" min="0" max="32" step="0.5" value="' + layer.pixelation + '" /><div class="note">Pixelates the text while the photo stays visible underneath. Use layer opacity to soften the blend; set to 0 to turn pixelation off.</div></div>');
       } else if (layer.type === "image") {
         const ppi = Math.round(effectivePpi(layer));
         const box = nodeBox(layer);
@@ -6526,7 +6665,17 @@
     body.querySelectorAll("[data-align]").forEach((b) => { b.onclick = () => { if (layer) { layer.node.align(b.dataset.align); afterNodeTransform(layer); renderProps(); commitHistory("align"); } }; });
 
     const textValue = $("textValue");
-    if (textValue && layer) textValue.oninput = () => { layer.node.text(textValue.value); afterNodeTransform(layer); renderLayers(); commitHistorySoon("edit text"); };
+    if (textValue && layer) textValue.oninput = () => { layer.node.text(textValue.value); applyTextPixelation(layer); afterNodeTransform(layer); renderLayers(); commitHistorySoon("edit text"); };
+
+    const pixelation = $("textPixelation");
+    if (pixelation && layer && layer.type === "text") pixelation.oninput = () => {
+      layer.pixelation = Number(pixelation.value);
+      const value = $("textPixelationValue");
+      if (value) value.textContent = layer.pixelation ? (Number.isInteger(layer.pixelation) ? layer.pixelation : layer.pixelation.toFixed(1)) + " px" : "Off";
+      applyTextPixelation(layer);
+      refreshThumb(layer);
+      commitHistorySoon("text pixelation");
+    };
 
     const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
     on("fitImage", () => { if (layer) { fitNodeToCanvas(layer); afterNodeTransform(layer); commitHistory("fit"); } });
@@ -6704,6 +6853,7 @@
       else if (meta && (event.key === "=" || event.key === "+")) { event.preventDefault(); setZoom(state.zoom * 1.25); }
       else if (meta && event.key === "-") { event.preventDefault(); setZoom(state.zoom / 1.25); }
       else if (meta && !event.shiftKey && event.key.toLowerCase() === "a") { event.preventDefault(); selectAllLayers(); }
+      else if (meta && event.key.toLowerCase() === "g") { event.preventDefault(); if (event.shiftKey) ungroupSelection(); else groupSelection(); }
       else if (meta && event.key.toLowerCase() === "d") { event.preventDefault(); if (layer) duplicateLayer(layer); }
       else if (meta && !event.shiftKey && (event.key.toLowerCase() === "c" || event.key.toLowerCase() === "x") && !String(window.getSelection() || "")) { if (copyLayers(event.key.toLowerCase() === "x")) event.preventDefault(); }
       else if (meta && !event.shiftKey && event.key.toLowerCase() === "v") { if (pasteLayers()) event.preventDefault(); }

@@ -18,7 +18,7 @@ import os
 import re
 from functools import lru_cache
 
-from PIL import Image, ImageChops, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 import docstore
 
@@ -450,6 +450,11 @@ def _draw_text(a):
         if "underline" in (a.get("textDecoration") or ""):
             uy = py + m["size"] * k * 0.4
             draw.line([((x + pad) * k, uy), ((x + pad + lw) * k, uy)], fill=fill, width=max(1, int(m["size"] * k / 18)))
+    if re.match(r"^300(?:\s|$)", (a.get("fontStyle") or "").lower()):
+        # Keep Light visibly thinner even when the selected family has no 300 face.
+        original_alpha = image.getchannel("A")
+        eroded_alpha = original_alpha.filter(ImageFilter.MinFilter(3))
+        image.putalpha(Image.blend(original_alpha, eroded_alpha, 0.2))
     return image, (-pad, -pad), k
 
 
