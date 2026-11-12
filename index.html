@@ -896,12 +896,12 @@
         <div class="drop-card">
           <div class="glyph"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.8"/><path d="M3 16l5-5 4 4 3-3 6 6"/></svg></div>
           <h2 id="dropTitle">Start a document</h2>
-          <p id="dropText">Drop a photo here, or pick a page size — A4, Letter, photo prints, cards, posters or screen. Everything stays on this Mac.</p>
+          <p id="dropText">Drop a photo or PDF here, or pick a page size — A4, Letter, photo prints, cards, posters or screen. Everything stays on this Mac.</p>
           <div class="row" id="dropActions">
             <button class="primary-btn" id="blankBtn">New document…</button>
             <button class="ghost-btn" id="browseBtn">Open photo</button>
           </div>
-          <input type="file" id="fileInput" accept="image/*" hidden />
+          <input type="file" id="fileInput" accept="image/*,application/pdf,.pdf" hidden />
           <div class="recent" id="recentDocs"></div>
         </div>
       </div>
@@ -929,7 +929,7 @@
 <div class="modal-veil" id="newDocVeil">
   <div class="modal">
     <div class="modal-head">
-      <div><h2 id="newDocTitle">New document</h2><p id="newDocSub">Choose the size you will print or publish at. The page shows its trim line, bleed and safe area while you edit. Drop a photo here to open it.</p></div>
+      <div><h2 id="newDocTitle">New document</h2><p id="newDocSub">Choose the size you will print or publish at. The page shows its trim line, bleed and safe area while you edit. Drop a photo or PDF here to open it.</p></div>
       <button class="icon-btn" id="newDocClose" title="Close (Esc)"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
     <div class="nd-body" id="newDocBody"></div>
@@ -4371,11 +4371,18 @@
     });
   }
 
+  const isPdf = (file) => (file.type || "") === "application/pdf" || /\.pdf$/i.test(file.name || "");
+
   async function ingestFile(file, open) {
-    if (!file || !/^image\//.test(file.type || "")) { toast("That is not an image file", true); return; }
+    if (file && isPdf(file)) return ingestPdf(file, open);
+    if (!file || !/^image\//.test(file.type || "")) { toast("That is not an image or PDF file", true); return; }
+    let dataUrl;
+    try { dataUrl = await readFile(file); } catch (error) { toast(error.message || String(error), true); return; }
+    return ingestImage(dataUrl, (file.name || "photo").replace(/\.[^.]+$/, ""), open);
+  }
+
+  async function ingestImage(dataUrl, baseName, open) {
     try {
-      const dataUrl = await readFile(file);
-      const baseName = (file.name || "photo").replace(/\.[^.]+$/, "");
       const result = await py({ action: "new_session", image_data: dataUrl, name: baseName });
       const src = rawWithBust(result.path);
       const img = await loadImageElement(dataUrl).catch(() => loadImageElement(src));
@@ -4409,6 +4416,113 @@
       toast(first ? "Opened " + result.width + " × " + result.height + " · " + docSummaryParts().join(" · ") : result.width + " × " + result.height + " placed as a new layer");
       warmModel();
     } catch (error) { toast(error.message || String(error), true); }
+  }
+
+  const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/";
+  const PDF_DPI = 300, PDF_MAX_SIDE = 8000, PDF_MAX_PAGES = 50;
+  let pdfjsReady = null;
+
+  function loadPdfjs() {
+    if (!pdfjsReady) pdfjsReady = (async () => {
+      const lib = await import(PDFJS + "pdf.min.mjs");
+      const code = await (await fetch(PDFJS + "pdf.worker.min.mjs")).text();
+      lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
+      return lib;
+    })().catch((error) => { pdfjsReady = null; throw new Error("Could not load the PDF reader (" + (error.message || error) + ")"); });
+    return pdfjsReady;
+  }
+
+  async function renderPdfPage(pdf, n) {
+    const page = await pdf.getPage(n);
+    const base = page.getViewport({ scale: 1 });
+    let dpi = PDF_DPI;
+    const side = Math.max(base.width, base.height) / 72;
+    if (side * dpi > PDF_MAX_SIDE) dpi = Math.max(1, Math.floor(PDF_MAX_SIDE / side));
+    const viewport = page.getViewport({ scale: dpi / 72 });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(viewport.width)); canvas.height = Math.max(1, Math.round(viewport.height));
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    page.cleanup();
+    const dataUrl = canvas.toDataURL("image/png");
+    canvas.width = canvas.height = 0;
+    return { dataUrl, dpi };
+  }
+
+  // Each PDF page becomes a page of the document holding that page as one
+  // image layer. A one-page PDF dropped on an open document is placed as a
+  // layer, like a photo.
+  async function ingestPdf(file, open) {
+    const baseName = (file.name || "document").replace(/\.[^.]+$/, "");
+    let pdf;
+    try {
+      toast("Reading " + (file.name || "PDF") + "…");
+      const lib = await loadPdfjs();
+      pdf = await lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+    } catch (error) {
+      toast(error && error.name === "PasswordException" ? "That PDF is password-protected" : "Could not open that PDF: " + (error.message || error), true);
+      return;
+    }
+    try {
+      const total = pdf.numPages, count = Math.min(total, PDF_MAX_PAGES);
+      const first = !doc.ready || !!open;
+      if (!first && count === 1) {
+        const { dataUrl } = await renderPdfPage(pdf, 1);
+        return ingestImage(dataUrl, baseName);
+      }
+      const mode = open ? open.mode : "own";
+      const fixed = mode === "own" ? null : (() => {
+        const keep = { width: doc.width, height: doc.height, dpi: doc.dpi, bleed: doc.bleed, safe: doc.safe, sizing: doc.sizing, presetId: doc.presetId };
+        setupPage(open.spec);
+        const out = { width: doc.width, height: doc.height, dpi: doc.dpi, bleed: doc.bleed, safe: doc.safe, sizing: doc.sizing, presetId: doc.presetId, t: trimRect() };
+        Object.assign(doc, keep);
+        return out;
+      })();
+      const pages = [];
+      for (let n = 1; n <= count; n++) {
+        if (count > 1) toast("Reading PDF page " + n + " of " + count + "…");
+        const { dataUrl, dpi } = await renderPdfPage(pdf, n);
+        const name = count > 1 ? baseName + " p" + n : baseName;
+        const result = await py({ action: "new_session", image_data: dataUrl, name });
+        const src = rawWithBust(result.path);
+        const img = await loadImageElement(dataUrl).catch(() => loadImageElement(src));
+        imageCache.set(src, img);
+        const iw = img.naturalWidth, ih = img.naturalHeight;
+        const box = fixed || { width: iw, height: ih, dpi, bleed: 0, safe: 0, sizing: "print", presetId: "" };
+        let k = 1;
+        if (mode === "fill") k = Math.max(box.width / iw, box.height / ih);
+        else if (mode === "fit") k = Math.min(fixed.t.width / iw, fixed.t.height / ih);
+        const layerId = freshLayerId();
+        pages.push({
+          id: newPageId(), name: first ? "Page " + n : name, width: box.width, height: box.height, background: "#ffffff", transparent: false,
+          activeId: layerId, dpi: box.dpi, bleed: box.bleed, safe: box.safe, sizing: box.sizing, presetId: box.presetId, guides: [],
+          layers: [{
+            id: layerId, type: "image", name, visible: true, locked: false, opacity: 1, blend: "normal",
+            sessionId: result.session_id, workingPath: result.path, src, naturalWidth: iw, naturalHeight: ih,
+            attrs: { x: box.width / 2, y: box.height / 2, rotation: 0, scaleX: k, scaleY: k, opacity: 1 },
+          }],
+        });
+      }
+      if (first) {
+        clearDocument();
+        state.fileName = baseName; $("fileName").value = baseName;
+        restore({ localSession: doc.localSession, page: 0, pages });
+        $("dropVeil").classList.add("hidden");
+        renderArtboard(); fitToScreen();
+      } else {
+        closeTextEditor(false);
+        flushHistorySoon();
+        doc.pages.splice(doc.page + 1, 0, ...pages);
+        switchPage(doc.page + 1);
+      }
+      setTool("move");
+      commitHistory(first ? "open PDF" : "import PDF");
+      const more = total > count ? " (the first " + count + " of " + total + ")" : "";
+      toast(first ? "Opened " + baseName + " · " + count + (count === 1 ? " page" : " pages") + more : "Added " + count + " pages from " + baseName + more, total > count);
+      warmModel();
+    } catch (error) { toast(error.message || String(error), true); }
+    finally { pdf.destroy(); }
   }
 
   function newBlankDocument(spec) {
@@ -4542,7 +4656,7 @@
     closeViewMenu();
     ndMode = "new";
     $("newDocTitle").textContent = "New document";
-    $("newDocSub").textContent = "Choose the size you will print or publish at. The page shows its trim line, bleed and safe area while you edit. Drop a photo here to open it.";
+    $("newDocSub").textContent = "Choose the size you will print or publish at. The page shows its trim line, bleed and safe area while you edit. Drop a photo or PDF here to open it.";
     renderNewDoc();
     $("newDocVeil").classList.add("show");
   }
@@ -6385,7 +6499,7 @@
   function setDropCard() {
     const ready = doc.ready;
     $("dropTitle").textContent = ready ? "Drop to place" : "Start a document";
-    $("dropText").textContent = ready ? "The image is added as a new layer on this page." : "Drop a photo here, or pick a page size — A4, Letter, photo prints, cards, posters or screen. Everything stays on this Mac.";
+    $("dropText").textContent = ready ? "An image is added as a new layer on this page; a multi-page PDF is added as new pages." : "Drop a photo or PDF here, or pick a page size — A4, Letter, photo prints, cards, posters or screen. Everything stays on this Mac.";
     $("dropActions").style.display = ready ? "none" : "";
     $("recentDocs").style.display = ready ? "none" : "";
   }
