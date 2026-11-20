@@ -218,6 +218,7 @@
   .pages-head .icon-btn svg { width: 14px; height: 14px; }
   .page-list { max-height: 172px; overflow-y: auto; padding: 0 6px 6px; display: flex; flex-direction: column; gap: 2px; }
   .pages.collapsed .page-list { display: none; }
+  .pages.collapsed:not([hidden]) ~ .layer-controls, .pages.collapsed:not([hidden]) ~ .layer-list, .pages.collapsed:not([hidden]) ~ .layer-foot { display: none; }
   .page-row {
     display: grid; grid-template-columns: 14px 46px minmax(0, 1fr) auto; gap: 6px; align-items: center;
     padding: 3px 4px 3px 2px; border-radius: 5px; cursor: pointer; color: var(--ink); min-height: 40px;
@@ -875,7 +876,7 @@
       <div class="left-pane" id="paneLayers">
       <div class="pages" id="pagesBox" hidden>
         <div class="pages-head">
-          <button class="pages-toggle" id="pagesToggle" title="Show or hide the page list"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>Pages <span class="count" id="pageCount"></span></button>
+          <button class="pages-toggle" id="pagesToggle" title="Show or hide the pages and layers"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>Pages <span class="count" id="pageCount"></span></button>
           <span class="spacer"></span>
           <button class="icon-btn" id="addPageBtn" title="Add a blank page after this one"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
         </div>
