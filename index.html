@@ -492,6 +492,47 @@
   .toast.show { display: block; }
   .toast.error { border-color: var(--danger); color: var(--danger); font-weight: 600; }
 
+  .export-note {
+    position: absolute; right: 14px; bottom: 34px; z-index: 9; width: 364px; max-width: calc(100% - 28px);
+    display: none; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 10px 12px; align-items: start;
+    padding: 12px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line);
+    border-left: 3px solid var(--ok); box-shadow: var(--shadow); color: var(--ink); font-size: 12.5px;
+  }
+  .export-note.show { display: grid; animation: export-note-in 0.2s ease-out; }
+  @keyframes export-note-in { from { opacity: 0; transform: translateX(18px); } }
+  @media (prefers-reduced-motion: reduce) { .export-note.show { animation: none; } }
+  .stage-wrap.paged .export-note { bottom: 74px; }
+  .export-note .thumb {
+    width: 56px; height: 56px; border-radius: 4px; overflow: hidden; display: grid; place-items: center;
+    border: 1px solid var(--line-soft); background: var(--surface-3); color: var(--muted); cursor: pointer;
+  }
+  .export-note .thumb img {
+    display: block; width: auto; height: auto; max-width: 54px; max-height: 54px;
+    background: repeating-conic-gradient(#cfcfcf 0 25%, #ffffff 0 50%) 0 0 / 8px 8px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  }
+  .export-note .thumb.empty svg { width: 22px; height: 22px; }
+  .export-note .body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .export-note .head {
+    display: flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 700;
+    letter-spacing: 0.05em; text-transform: uppercase; color: var(--ok);
+  }
+  .export-note .head svg { width: 13px; height: 13px; stroke-width: 2.4; }
+  .export-note .file {
+    padding: 0; text-align: left; font-weight: 600; font-size: 13px; color: var(--ink-strong);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+  }
+  .export-note .file:hover { color: var(--accent); text-decoration: underline; }
+  .export-note .meta { color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+  .export-note .where { color: var(--faint); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .export-note .actions { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+  .export-note .actions button { padding: 4px 11px; font-size: 12px; }
+  .export-note .x { width: 22px; height: 22px; margin: -4px -4px 0 0; }
+  .export-note .x svg { width: 13px; height: 13px; }
+  @media (max-width: 999px) {
+    .export-note { left: 8px; right: 8px; width: auto; max-width: none; bottom: 78px; }
+    .stage-wrap.paged .export-note { bottom: 118px; }
+  }
+
   /* ---------- Properties panel ---------- */
   .props {
     flex: 0 0 292px; background: var(--surface); border-left: 1px solid var(--line);
@@ -923,6 +964,7 @@
       <textarea class="text-editor" id="textEditor" spellcheck="false"></textarea>
       <div class="status-bar" id="statusBar"></div>
       <div class="toast" id="toast"></div>
+      <div class="export-note" id="exportNote" role="status" aria-live="polite"></div>
     </main>
 
     <button class="panel-strip right" id="rightStrip" title="Show Properties, Adjust, Filters and Generative (Tab shows all panels)"><svg viewBox="0 0 24 24"><path d="M11 17l-5-5 5-5"/><path d="M18 17l-5-5 5-5"/></svg><span class="vlabel">Properties</span></button>
@@ -2675,22 +2717,100 @@
     try { await docPy({ action: "reveal", path: path || "" }); } catch (error) { toast(error.message || String(error), true); }
   }
 
+  async function openSaved(path) {
+    try { await docPy({ action: "open_file", path: path || "" }); } catch (error) { toast(error.message || String(error), true); }
+  }
+
+  const fmtBytes = (n) => (n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round((n || 0) / 1024)) + " KB");
+  const tildePath = (p) => String(p || "").replace(/^\/Users\/[^/]+/, "~");
+  const dirName = (p) => String(p || "").replace(/\/[^/]*$/, "");
+
+  function thumbUrl(canvas, side) {
+    try {
+      const k = Math.min(1, side / Math.max(canvas.width, canvas.height));
+      const out = document.createElement("canvas");
+      out.width = Math.max(1, Math.round(canvas.width * k)); out.height = Math.max(1, Math.round(canvas.height * k));
+      out.getContext("2d").drawImage(canvas, 0, 0, out.width, out.height);
+      return out.toDataURL("image/png");
+    } catch (e) { return ""; }
+  }
+
+  let exportNoteTimer = null;
+  function showExportNote(note) {
+    const node = $("exportNote");
+    const first = note.paths[0], many = note.paths.length > 1, folder = dirName(first);
+    node.innerHTML =
+      '<div class="thumb' + (note.thumb ? "" : " empty") + '" data-en="open" title="Open ' + esc(baseName(first)) + '">' +
+        (note.thumb ? '<img alt="" src="' + note.thumb + '" />' : icon(["M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z", "M14 3v5h5"])) + "</div>" +
+      '<div class="body"><div class="head">' + icon(["M5 12.5l4.5 4.5L19 7"]) + esc(note.verb) + "</div>" +
+        '<button class="file" data-en="open" title="' + esc(first) + '">' + esc(many ? note.paths.length + " files · " + baseName(first) + " …" : baseName(first)) + "</button>" +
+        '<div class="meta">' + esc(note.meta) + "</div>" +
+        '<div class="where" title="' + esc(folder) + '">in ' + esc(tildePath(folder)) + "</div></div>" +
+      '<button class="icon-btn x" data-en="close" title="Dismiss">' + icon(["M6 6l12 12M18 6L6 18"]) + "</button>" +
+      '<div class="actions"><button class="ghost-btn" data-en="open">Open</button><button class="ghost-btn" data-en="reveal">Show in Finder</button></div>';
+    const hide = () => { clearTimeout(exportNoteTimer); node.classList.remove("show"); };
+    const arm = (ms) => { clearTimeout(exportNoteTimer); exportNoteTimer = setTimeout(hide, ms); };
+    node.querySelectorAll("[data-en]").forEach((el) => {
+      el.onclick = () => {
+        if (el.dataset.en === "close") { hide(); return; }
+        (el.dataset.en === "reveal" ? reveal : openSaved)(first);
+      };
+    });
+    node.onmouseenter = () => clearTimeout(exportNoteTimer);
+    node.onmouseleave = () => arm(4000);
+    node.classList.remove("show");
+    void node.offsetWidth;
+    node.classList.add("show");
+    arm(12000);
+  }
+
+  const EXPORT_JOB_ID = "photo-editor-export";
+  function exportActivity(title) {
+    const job = window.fused && typeof fused.trackJob === "function" ? fused.trackJob({ id: EXPORT_JOB_ID, title, kind: "task" }) : null;
+    let settled = false;
+    return {
+      progress(done, total, detail) { if (job && !settled) job.update({ done, total, detail }); },
+      fail(error) { if (job && !settled) { settled = true; job.fail(error); } },
+      async done(target, doneTitle, detail) {
+        if (!job || settled) return;
+        settled = true;
+        await job.update({});
+        const self = new URLSearchParams(location.search).get("path") || "";
+        const headers = { "Content-Type": "application/json", "X-Fused": "1", "X-Fused-Page": encodeURIComponent(target) };
+        if (self) headers["X-Fused-Source"] = encodeURIComponent(self);
+        let ok = false;
+        try {
+          const res = await fetch("/api/jobs", { method: "POST", headers, body: JSON.stringify({ id: EXPORT_JOB_ID, title: doneTitle, detail, state: "done" }) });
+          ok = res.ok;
+        } catch (e) { ok = false; }
+        if (!ok) { job.update({ title: doneTitle }); job.finish(detail); return; }
+        try { localStorage.setItem("fused-render:jobs-ping", String(Date.now())); } catch (e) {}
+      },
+    };
+  }
+
   // ⌘S / the "Saved" chip: a full-size PNG copy in the save folder.
   async function saveCopy() {
     if (!doc.ready) return;
     closeTextEditor(false);
     flushSaveNow();
+    const multi = doc.pages.length > 1;
+    const activity = exportActivity("Saving " + (multi ? "page " + (doc.page + 1) + " as " : "") + "a PNG copy…");
     try {
-      const dataUrl = pageCanvas(Math.max(doc.width, doc.height)).toDataURL("image/png");
+      const canvas = pageCanvas(Math.max(doc.width, doc.height));
+      const dataUrl = canvas.toDataURL("image/png");
       if (!doc.localSession) doc.localSession = newSessionId();
       const session = (doc.layers.find((l) => l.type === "image") || {}).sessionId || doc.localSession;
       const frame = await py({ action: "save_frame", session_id: session, image_data: dataUrl });
-      const multi = doc.pages.length > 1;
       const result = await py({ action: "export", session_id: session, source: frame.path, fmt: "png", background: doc.background, dpi: String(doc.dpi), save: "true",
         file_name: (state.fileName || "design") + (multi ? " – page " + (doc.page + 1) : "") });
-      toast("Saved " + (multi ? "page " + (doc.page + 1) + " as " : "") + baseName(result.path) + " to " + (store.saveDir || "~/Pictures/Photo Editor").replace(/^.*\/(Pictures\/)/, "$1"), false,
-        { label: "Show in Finder", run: () => reveal(result.path) });
-    } catch (error) { toast(error.message || String(error), true); }
+      const meta = (multi ? "Page " + (doc.page + 1) + " · " : "") + (result.width || canvas.width) + " × " + (result.height || canvas.height) + " px · " + fmtBytes(result.bytes);
+      activity.done(result.path, "Saved " + baseName(result.path), meta + " · " + tildePath(dirName(result.path)));
+      showExportNote({ verb: "Saved a copy", paths: [result.path], meta, thumb: thumbUrl(canvas, 112) });
+    } catch (error) {
+      activity.fail(error);
+      toast(error.message || String(error), true);
+    }
   }
 
   // ---------------------------------------------------------------- collapsible panels
@@ -5813,6 +5933,9 @@
     const list = exportPages(c), multi = list.length > 1, shown = doc.page;
     const base = (c.fileName || "").trim() || "design";
     state.exporting = true;
+    const activity = exportActivity(multi && L0.format !== "pdf" ? "Exporting " + list.length + " pages…"
+      : "Exporting " + base + "." + ({ jpeg: "jpg", tiff: "tif" }[L0.format] || L0.format) + (multi ? " · " + list.length + " pages" : "") + "…");
+    let thumb = "";
     try {
       await sleep(30);
       if (!doc.localSession) doc.localSession = newSessionId();
@@ -5829,8 +5952,13 @@
         }
         const L = computeLayout(c);
         if (L.error) throw new Error((multi ? "Page " + (i + 1) + ": " : "") + L.error);
-        if (multi) go.textContent = "Exporting page " + (frames.length + 1) + " of " + list.length + "…";
-        const frame = await py({ action: "save_frame", session_id: session, image_data: renderOutput(L, 1).toDataURL("image/png") });
+        if (multi) {
+          go.textContent = "Exporting page " + (frames.length + 1) + " of " + list.length + "…";
+          activity.progress(frames.length, list.length, "Page " + (frames.length + 1) + " of " + list.length);
+        }
+        const canvas = renderOutput(L, 1);
+        if (!thumb) thumb = thumbUrl(canvas, 112);
+        const frame = await py({ action: "save_frame", session_id: session, image_data: canvas.toDataURL("image/png") });
         frames.push({ i, L, path: frame.path, background: doc.background });
       }
       if (doc.page !== shown) switchPage(shown, { quiet: true });
@@ -5848,13 +5976,14 @@
       }
       closeExport();
       const bytes = results.reduce((n, r) => n + (r.bytes || 0), 0);
-      const size = bytes > 1048576 ? (bytes / 1048576).toFixed(1) + " MB" : Math.round(bytes / 1024) + " KB";
-      const L = frames[0].L, first = results[0].path;
-      const what = results.length > 1 ? results.length + " files (" + baseName(first) + " …)" : baseName(first) + (multi ? " · " + frames.length + " pages" : "");
-      toast("Saved " + what + " · " + (L.print ? L.sizeName + " " + fmtSize(L.tmm.w, L.tmm.h) + " @ " + L.dpi + " DPI" : L.pageW + " × " + L.pageH + " px") + " · " + size, false,
-        { label: "Show in Finder", run: () => reveal(first) });
+      const L = frames[0].L, paths = results.map((r) => r.path), first = paths[0];
+      const meta = (L.print ? L.sizeName + " " + fmtSize(L.tmm.w, L.tmm.h) + " @ " + L.dpi + " DPI" : L.pageW + " × " + L.pageH + " px") +
+        (multi && paths.length === 1 ? " · " + frames.length + " pages" : "") + " · " + fmtBytes(bytes);
+      activity.done(paths.length > 1 ? dirName(first) : first, "Exported " + (paths.length > 1 ? paths.length + " files" : baseName(first)), meta + " · " + tildePath(dirName(first)));
+      showExportNote({ verb: "Exported", paths, meta, thumb });
     } catch (error) {
       if (doc.page !== shown) switchPage(shown, { quiet: true });
+      activity.fail(error);
       toast(error.message || String(error), true);
       if ($("exportVeil").classList.contains("show")) renderExport();
     } finally { state.exporting = false; }

@@ -44,7 +44,7 @@ def main(action: str = "status", session_id: str = "", image_data: str = "",
         return {"ok": True, **docstore.save_screenshot(request_id, docstore.decode_png(image_data) if image_data else b"",
                                                         json.loads(values_json or "{}"))}
 
-    if action.startswith("doc_") or action == "reveal":
+    if action.startswith("doc_") or action in ("reveal", "open_file"):
         return _documents(action, doc_id=doc_id, name=name, snap_json=snap_json, label=label,
                           base_rev=base_rev, rev=rev, thumb=thumb, path=path, prev_doc=prev_doc)
 
@@ -227,16 +227,21 @@ def _documents(action: str, doc_id: str, name: str, snap_json: str, label: str,
     if action == "doc_delete":
         docstore.delete(doc_id)
         return {"ok": True}
-    if action == "reveal":
+    if action in ("reveal", "open_file"):
         import subprocess
 
         target = os.path.realpath(path or docstore.SAVE_DIR)
         root = os.path.realpath(docstore.SAVE_DIR)
         home = os.path.realpath(os.path.expanduser("~"))
         if os.path.commonpath([target, root]) != root and not (os.path.commonpath([target, home]) == home and os.path.exists(target)):
-            raise ValueError("Only saved files can be revealed")
+            raise ValueError("Only saved files can be " + ("revealed" if action == "reveal" else "opened"))
         os.makedirs(root, exist_ok=True)
-        subprocess.run(["open", "-R", target] if os.path.isfile(target) else ["open", target], check=False)
+        if action == "open_file":
+            if not os.path.isfile(target):
+                raise ValueError(f"{os.path.basename(target)} is no longer there")
+            subprocess.run(["open", target], check=False)
+        else:
+            subprocess.run(["open", "-R", target] if os.path.isfile(target) else ["open", target], check=False)
         return {"ok": True}
     raise ValueError(f"Unknown action: {action!r}")
 
